@@ -1,0 +1,51 @@
+name: Fix single-symbol status diagnostics
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch endpoints.py
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('backend/api/endpoints.py')
+          s = p.read_text(encoding='utf-8')
+          old = '''        "engine": {
+            "type": "SMCBot",
+            "status": "RUNNING" if bot and bot.running else "STOPPED",
+            "bot_count": 1 if bot else 0,
+            "task_count": 1 if _state.get("engine_task") and not _state["engine_task"].done() else 0,
+            "healthy_count": 1 if bot and bot.running else 0,
+            "error_count": 0,
+            "started_at": None,
+            "uptime": None,
+            "last_heartbeat": None,
+        },'''
+          new = '''        "engine": {
+            "type": "SMCBot",
+            "status": "RUNNING" if bot and bot.running else "STOPPED",
+            "bot_count": 1 if bot else 0,
+            "task_count": 1 if _state.get("engine_task") and not _state["engine_task"].done() else 0,
+            "healthy_count": 1 if bot and bot.running and not getattr(bot, "_last_error", None) else 0,
+            "error_count": 1 if bot and getattr(bot, "_last_error", None) else 0,
+            "last_error": getattr(bot, "_last_error", None) if bot else None,
+            "loop_count": getattr(bot, "_loop_count", 0) if bot else 0,
+            "last_loop_time": getattr(bot, "_last_loop_time", None) if bot else None,
+            "started_at": getattr(bot, "_started_at", None) if bot else None,
+            "uptime": (time.monotonic() - bot._started_at if bot and bot._started_at is not None and bot.running else None),
+            "last_heartbeat": (time.monotonic() - bot._last_loop_time if bot and bot._last_loop_time is not None else None),
+        },'''
+          if old not in s:
+              raise SystemExit('Target block not found; no changes made')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+      - name: Commit and push
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/api/endpoints.py
+          git commit -m 'Fix single-symbol engine diagnostics' || exit 0
+          git push
