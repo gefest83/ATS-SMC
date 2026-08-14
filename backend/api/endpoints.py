@@ -110,8 +110,6 @@ async def stop_engine_state(reason: str = "Остановка через API") -
                     if inspect.isawaitable(result):
                         await result
                 except Exception:
-                    # Cleanup must continue so a failed component cannot leave
-                    # the engine task or database lifecycle hanging.
                     logging.getLogger(__name__).exception("Engine stop failed")
             else:
                 bot.running = False
@@ -127,12 +125,10 @@ async def stop_engine_state(reason: str = "Остановка через API") -
 async def start_engine_state() -> bool:
     """Validate and start at most one engine task under the lifecycle lock."""
     async with _engine_lock:
-        # Check if multi-symbol engine is already running
         multi_engine = _state.get("multi_engine")
         if multi_engine is not None and multi_engine.running:
             return False
 
-        # Check if single-symbol engine is already running
         task = _state.get("engine_task")
         if task and not task.done():
             return False
@@ -140,7 +136,6 @@ async def start_engine_state() -> bool:
         symbols = settings.symbols_list
 
         if len(symbols) > 1:
-            # Multi-symbol mode
             from backend.core.engine.multi_symbol import MultiSymbolEngine
 
             if settings.TRADING_MODE.lower().strip() == "paper" and _paper_market_data_provider is not None:
@@ -151,14 +146,12 @@ async def start_engine_state() -> bool:
             await multi_engine.start()
             _state["multi_engine"] = multi_engine
 
-            # Store first bot as "bot" for backward compatibility
             if multi_engine.symbols:
                 first_symbol = multi_engine.symbols[0]
                 _state["bot"] = multi_engine.get_bot(first_symbol)
 
             return True
         else:
-            # Single-symbol mode (backward compatible)
             bot = _state.get("bot")
             if bot is None:
                 module = __import__("backend.core.engine.smc_bot", fromlist=["SMCBot"])
@@ -294,6 +287,7 @@ async def get_status(request: Request, authorization: Optional[str] = Header(def
             "engine": engine_diag,
         }
 
+    task = _state.get("engine_task")
     return {
         "app": settings.APP_NAME,
         "trading_mode": settings.TRADING_MODE,
@@ -309,12 +303,14 @@ async def get_status(request: Request, authorization: Optional[str] = Header(def
             "type": "SMCBot",
             "status": "RUNNING" if bot and bot.running else "STOPPED",
             "bot_count": 1 if bot else 0,
-            "task_count": 1 if _state.get("engine_task") and not _state["engine_task"].done() else 0,
-            "healthy_count": 1 if bot and bot.running else 0,
-            "error_count": 0,
-            "started_at": None,
-            "uptime": None,
-            "last_heartbeat": None,
+            "task_count": 1 if task and not task.done() else 0,
+            "healthy_count": 1 if bot and bot.running and not getattr(bot, "_last_error", None) else 0,
+            "error_count": 1 if bot and getattr(bot, "_last_error", None) else 0,
+            "started_at": getattr(bot, "_started_at", None) if bot else None,
+            "uptime": (time.time() - bot._started_at) if bot and getattr(bot, "_started_at", None) else None,
+            "last_heartbeat": getattr(bot, "_last_loop_time", None) if bot else None,
+            "loop_count": getattr(bot, "_loop_count", 0) if bot else 0,
+            "last_error": getattr(bot, "_last_error", None) if bot else None,
         },
     }
 
@@ -343,7 +339,6 @@ async def get_symbol_status(
 
         diag = multi_engine.get_symbol_diagnostics(symbol)
 
-        # Build position info — paper or live/testnet
         def _calc_pnl_ep(side: str, entry_price: float, current_price: float, size: float) -> float:
             if side == "BUY":
                 return (current_price - entry_price) * size
@@ -355,7 +350,6 @@ async def get_symbol_status(
         has_position_fn = getattr(bot, "has_active_position", None)
         has_position = has_position_fn() if callable(has_position_fn) else (bot._paper_position is not None)
         current_price_ep = None
-        # Try to get current price from ticker for PnL recalculation
         try:
             exchange = getattr(bot, "exchange", None)
             if exchange is not None:
@@ -375,7 +369,6 @@ async def get_symbol_status(
             side = pos.get("side", "").upper() if pos else ""
             entry_f = float(entry) if entry else None
             size_f = float(size) if size else None
-            # ALWAYS recalculate PnL from current price
             pnl_value = None
             if current_price_ep is not None and entry_f is not None and size_f is not None and size_f > 0:
                 pnl_value = _calc_pnl_ep(side, entry_f, current_price_ep, size_f)
@@ -399,7 +392,6 @@ async def get_symbol_status(
                         entry_f = float(lpos.entry_price) if lpos.entry_price else None
                         qty_f = float(lpos.quantity) if lpos.quantity else None
                         side_str = (lpos.side or "").upper()
-                        # ALWAYS recalculate PnL from current price
                         pnl_value = 0.0
                         if current_price_ep is not None and entry_f is not None and qty_f is not None and qty_f > 0:
                             pnl_value = _calc_pnl_ep(side_str, entry_f, current_price_ep, qty_f)
@@ -434,13 +426,11 @@ async def get_symbol_status(
             },
         }
 
-    # Single symbol mode
     bot = _state.get("bot")
     if bot and bot.symbol == symbol:
         has_position_fn = getattr(bot, "has_active_position", None)
         has_position = has_position_fn() if callable(has_position_fn) else (bot._paper_position is not None)
         position = None
-        # Try to get current price from ticker
         current_price_ep_single = None
         try:
             exchange = getattr(bot, "exchange", None)
@@ -461,7 +451,6 @@ async def get_symbol_status(
             side = pos.get("side", "").upper() if pos else ""
             entry_f = float(entry) if entry else None
             size_f = float(size) if size else None
-            # ALWAYS recalculate PnL from current price
             pnl_value = None
             if current_price_ep_single is not None and entry_f is not None and size_f is not None and size_f > 0:
                 if side == "BUY":
@@ -488,7 +477,6 @@ async def get_symbol_status(
                         entry_f = float(lpos.entry_price) if lpos.entry_price else None
                         qty_f = float(lpos.quantity) if lpos.quantity else None
                         side_str = (lpos.side or "").upper()
-                        # ALWAYS recalculate PnL from current price
                         pnl_value = 0.0
                         if current_price_ep_single is not None and entry_f is not None and qty_f is not None and qty_f > 0:
                             if side_str == "BUY":
@@ -528,7 +516,7 @@ async def get_symbol_status(
             "position": position,
             "runtime": {
                 "loop_count": bot._loop_count,
-                "last_loop_time": None,
+                "last_loop_time": getattr(bot, "_last_loop_time", None),
                 "last_error": bot._last_error,
                 "bot_object_id": id(bot),
                 "task_state": task_state,
