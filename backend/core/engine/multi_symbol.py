@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from typing import Dict, List, Optional
@@ -110,6 +111,13 @@ class MultiSymbolEngine:
     def get_all_bots(self) -> Dict[str, SMCBot]:
         return dict(self._bots)
 
+    @staticmethod
+    def _actual_position_count(bot: SMCBot) -> int:
+        """Return the real open-position count for both live and paper modes."""
+        live_count = max(0, int(bot.get_live_position_count()))
+        paper_count = 1 if getattr(bot, "_paper_position", None) is not None else 0
+        return live_count + paper_count
+
     def _create_bot(self, symbol: str) -> SMCBot:
         """Create an independent SMCBot for a symbol."""
         return SMCBot(
@@ -132,19 +140,24 @@ class MultiSymbolEngine:
         self._started_at = _now_utc3_str()
         self._stop_notification_sent = False
 
+        started_symbols: List[str] = []
         for symbol in symbols:
             bot = self._create_bot(symbol)
+
+            # Validate before registering the bot as active. A failed symbol
+            # must not appear healthy/running in engine diagnostics.
+            try:
+                bot.validate_startup()
+            except Exception as exc:
+                self._errors[symbol] = str(exc)
+                logger.error("Validation failed for %s: %s", symbol, exc)
+                continue
+
             self._bots[symbol] = bot
             self._errors[symbol] = None
             self._loop_counts[symbol] = 0
             self._last_loop_times[symbol] = None
-
-            # Validate before creating task
-            try:
-                bot.validate_startup()
-            except Exception as exc:
-                logger.error("Validation failed for %s: %s", symbol, exc)
-                continue
+            started_symbols.append(symbol)
 
             task = asyncio.create_task(
                 self._run_bot_safely(symbol, bot),
@@ -158,15 +171,22 @@ class MultiSymbolEngine:
             name="multi-symbol-sync",
         )
 
-        self.running = True
+        self.running = bool(self._tasks)
         logger.info(
             "Multi-symbol engine started with %d symbols",
             len(self._tasks),
         )
 
-        # Send startup Telegram notification
+        if not self.running:
+            self._sync_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._sync_task
+            self._sync_task = None
+            return
+
+        # Send startup Telegram notification only for symbols that actually started.
         await self._notifier.notify_engine_started(
-            symbols=symbols,
+            symbols=started_symbols,
             exchange=settings.EXCHANGE,
             timeframe=settings.TIMEFRAME,
             bot_count=len(self._tasks),
@@ -217,10 +237,7 @@ class MultiSymbolEngine:
             self._stop_notification_sent = True
             # Count open positions before stopping
             open_positions = sum(
-                bot.get_live_position_count() for bot in self._bots.values()
-            )
-            open_positions += sum(
-                1 for bot in self._bots.values() if bot._paper_position is not None
+                self._actual_position_count(bot) for bot in self._bots.values()
             )
             try:
                 await self._notifier.notify_engine_stopped(
@@ -259,7 +276,9 @@ class MultiSymbolEngine:
                     pass
                 except Exception as exc:
                     logger.exception(
-                        "Failed to await task for %s: %s", symbol, exc
+                        "Failed to await task for %s: %s",
+                        symbol,
+                        exc,
                     )
 
         self._tasks.clear()
@@ -301,7 +320,7 @@ class MultiSymbolEngine:
                 "symbol": symbol,
                 "running": bot.running,
                 "last_signal": sig,
-                "has_position": bot._paper_position is not None,
+                "has_position": self._actual_position_count(bot) > 0,
             }
         return result
 
@@ -427,7 +446,7 @@ class MultiSymbolEngine:
         actual = 0
         per_symbol: Dict[str, int] = {}
         for symbol, bot in self._bots.items():
-            count = bot.get_live_position_count()
+            count = self._actual_position_count(bot)
             per_symbol[symbol] = count
             actual += count
         self._open_trade_gate._count = actual
@@ -444,14 +463,14 @@ class MultiSymbolEngine:
         can drift from reality. This method corrects it.
         """
         for symbol, bot in self._bots.items():
-            live_count = bot.get_live_position_count()
+            actual_count = self._actual_position_count(bot)
             rm = bot.risk_manager
-            if rm.open_trades != live_count:
+            if rm.open_trades != actual_count:
                 logger.warning(
                     "Risk counter drift: symbol=%s open_trades=%d actual=%d; correcting",
-                    symbol, rm.open_trades, live_count,
+                    symbol, rm.open_trades, actual_count,
                 )
-                rm.open_trades = live_count
+                rm.open_trades = actual_count
         self.recalculate_gate()
 
     def get_engine_diagnostics(self) -> dict:
