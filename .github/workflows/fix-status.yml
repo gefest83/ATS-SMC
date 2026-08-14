@@ -1,5 +1,7 @@
 name: Fix single-symbol status diagnostics
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
