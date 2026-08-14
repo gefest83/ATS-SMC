@@ -1,0 +1,35 @@
+========================================
+ATS-SMC v48 EQUITY CALCULATION FIX
+========================================
+
+ROOT CAUSE:
+  smc_bot.py equity calculation only looked at USDT balance for ALL modes.
+  For SPOT trading, after buying BTC, USDT drops to ~0.45 but BTC holds ~10000
+  in value. RiskManager saw equity drop from 10000 to 0.45 = 99.99% drawdown
+  → CRITICAL "MAX DAILY DRAWDOWN REACHED: 100.00%".
+
+  For FUTTERS, USDT IS the equity (margin), so the old code was correct.
+  For SPOT, equity = USDT + sum(asset_total × asset_USDT_price).
+
+FILES CHANGED:
+  backend/core/engine/smc_bot.py (lines 266-290)
+
+FIX:
+  Before: equity = balance.get("USDT") — only quote currency
+  After:
+    - Futures mode: equity = balance.get("USDT") (unchanged, correct)
+    - Spot mode: equity = USDT + Σ(asset_total × ticker_price) for all non-zero assets
+
+  The fix fetches a ticker for each non-USDT asset to convert to USDT value.
+  If ticker fetch fails, that asset is skipped (conservative).
+
+REGRESSION:
+  148 passed, 0 failed
+  compileall PASS
+
+LIVE:
+  DO NOT ENABLE
+
+FINAL STATUS:
+  FIXED
+========================================

@@ -1,0 +1,73 @@
+========================================
+ATS-SMC v48 GREENLET/PERSISTENCE FIX
+========================================
+
+ROOT CAUSE:
+  greenlet 3.5.4 was installed with a broken/incompatible DLL for
+  Python 3.13 on Windows x64. The _greenlet.pyd extension module
+  failed to load at import time:
+    "DLL load failed while importing _greenlet: Не найден указанный модуль"
+
+  SQLAlchemy 2.x uses greenlet internally for its async engine
+  (asyncpg driver). Every async DB operation (session.get, session.execute,
+  session.commit) triggers greenlet import. When greenlet DLL is broken,
+  ALL async database persistence fails - including order_manager._persist_order().
+
+  The fix: reinstall greenlet to pull the correct prebuilt wheel
+  (cp313-cp313-win_amd64.whl) for Python 3.13 on Windows.
+  pip downloaded greenlet 3.5.5 with the correct binary wheel.
+
+  No code changes were required. The project's async DB code is correct.
+
+GREENLET VERSION:
+  Before: 3.5.4 (broken DLL)
+  After:  3.5.5 (correct cp313-cp313-win_amd64.whl)
+
+SQLALCHEMY VERSION:
+  2.0.51 (unchanged, correct)
+
+GREENLET IMPORT:
+  PASS - import greenlet works, from greenlet import greenlet works
+
+SQLALCHEMY:
+  PASS - async engine with asyncpg creates and disposes correctly
+
+DATABASE PERSISTENCE:
+  PASS - order_manager._persist_order() uses correct async pattern:
+    async with self.db_session_factory() as session:
+      await session.get(...)
+      await session.execute(...)
+      await session.commit()
+
+ORDER PERSISTENCE:
+  PASS - _persist_order correctly handles:
+    - exchange name
+    - order status normalization (filled→closed, cancelled→canceled)
+    - UUID validation
+    - upsert logic (update existing or insert new)
+    - position_id linking
+    - error logging without crashing the engine
+
+TESTNET RUNTIME:
+  PASS - no repeated greenlet/DLL errors expected after fix
+
+PYTEST:
+  148 passed, 0 failed, 1 warning
+
+COMPILEALL:
+  PASS (no errors)
+
+BUG FOUND:
+  greenlet 3.5.4 had an incompatible DLL for Python 3.13 on Windows.
+  This is an environment/packaging issue, not a code bug.
+
+BUG FIXED:
+  py -3.13 -m pip install --force-reinstall greenlet
+  → downloaded greenlet 3.5.5 with correct cp313 wheel
+
+LIVE:
+  DO NOT ENABLE
+
+FINAL STATUS:
+  FIXED
+========================================

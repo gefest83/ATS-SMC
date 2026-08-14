@@ -1,0 +1,68 @@
+========================================
+ATS-SMC v48 STRATEGY REGISTRY FIX
+========================================
+
+ROOT CAUSE:
+  In StrategyRegistry.load_strategies() (backend/core/strategy/base.py),
+  spec_from_file_location() was called with the short module name (e.g. "ict"),
+  creating a loader internally bound to that name. Then spec.name was
+  overwritten to "ats_strategy_ict" AFTER the spec was created.
+
+  When exec_module() ran, Python's loader checked if the module name matched
+  what the loader was initialized with. The mismatch caused:
+    "loader for ict cannot handle ats_strategy_ict"
+
+  The fix: pass the qualified name ("ats_strategy_ict") directly to
+  spec_from_file_location() so the loader is created with the correct name
+  from the start.
+
+FILES CHANGED:
+  backend/core/strategy/base.py (StrategyRegistry.load_strategies method)
+
+FIX:
+  Before (broken):
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    spec.name = f"ats_strategy_{module_name}"  # too late, loader already bound
+
+  After (fixed):
+    qualified_name = f"ats_strategy_{module_name}"
+    spec = importlib.util.spec_from_file_location(qualified_name, path)
+    # loader is now correctly bound to qualified_name
+
+STRATEGIES:
+  ICT:         PASS
+  SMART_MONEY: PASS
+  TREND:       PASS
+
+REGISTRY:
+  loaded: 3/3
+
+RUNTIME IMPORT:
+  PASS - all 3 strategies import, instantiate, and register correctly
+
+PYTEST:
+  148 passed, 0 failed, 1 warning
+
+COMPILEALL:
+  PASS (no errors)
+
+IMPORTS:
+  PASS (all core modules load)
+
+FASTAPI STARTUP:
+  PASS
+  Startup log shows:
+    Loaded strategy: ict
+    Loaded strategy: smart_money
+    Loaded strategy: trend
+    Total loaded strategies: 3
+
+ERRORS:
+  None
+
+LIVE:
+  DO NOT ENABLE
+
+FINAL STATUS:
+  FIXED
+===========

@@ -1,0 +1,27 @@
+# Core
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.38
+asyncpg==0.30.0
+alembic==1.15.2
+ccxt==4.2.96
+pydantic==2.10.0
+pydantic-settings==2.6.0
+python-dotenv==1.0.1
+
+# Analysis (SMC engine + indicators)
+numpy==1.26.4
+pandas==2.2.2
+
+# Integrations
+python-telegram-bot==21.9
+
+# Dev
+pytest==8.3.5
+pytest-asyncio==0.24.0
+pytest-cov==5.0.0
+black==24.10.0
+isort==5.13.2
+mypy==1.15.0
+pre-commit==3.9.1
+

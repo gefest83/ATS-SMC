@@ -1,0 +1,82 @@
+========================================
+ATS-SMC v48 FINAL PRE-LIVE HARDENING
+========================================
+
+ALEMBIC:
+installed:          YES (alembic==1.15.2)
+migration:          0001_initial.py (7 tables, 3 ENUM types)
+upgrade:            VALID (offline SQL verified)
+status:             READY (requires PostgreSQL for online mode)
+
+Migration covers:
+- positions (UUID PK, ENUM status, metadata_json)
+- trades (UUID PK, position_id FK+UNIQUE, pnl/fees)
+- orders (exchange+order_id UNIQUE, position_id FK)
+- runtime_state (scope PK, equity/drawdown persistence)
+- logs (timestamp, level, module, message)
+- analytics (metric_name, metric_value, tags)
+- strategy_performance (strategy stats)
+
+Downgrade drops all tables + ENUM types.
+
+init_db.py updated:
+- Tries Alembic upgrade head first
+- Falls back to create_all() if Alembic unavailable
+- Backward-compatible with existing deployments
+
+----------------------------------------
+
+DATABASE:
+connection:         NOT TESTED (no PostgreSQL server)
+transactions:       NOT TESTED
+recovery:           NOT TESTED
+status:             BLOCKED (PostgreSQL unavailable locally)
+
+Note: Docker-compose provides PostgreSQL in deployment.
+The migration SQL is valid and ready for deployment.
+
+----------------------------------------
+
+TELEGRAM:
+real:               NOT TESTED (no token configured)
+mock:               PASS (simulation logging fallback)
+status:             NOT TESTED
+
+----------------------------------------
+
+SECURITY:
+.env ignored:       PASS
+secrets not logged: PASS
+no creds in source: PASS
+alembic safe:       PASS (no secrets in ini/env/migrations)
+API auth:           PASS
+sandbox enforced:   PASS
+9/9 checks:         PASS
+
+----------------------------------------
+
+TESTNET REGRESSION:
+pytest:             148 passed, 0 failed
+compileall:         PASS
+imports:            PASS (incl. alembic, init_db)
+status:             PASS
+
+----------------------------------------
+
+BUGS FOUND:         None
+BUGS FIXED:         None needed
+
+REMAINING BLOCKERS:
+1. PostgreSQL not available locally — test Alembic online
+   migration in Docker or against a real PostgreSQL instance
+2. Telegram integration not tested — requires bot token
+3. Alembic upgrade needs to be verified against a DB that
+   already has tables created by create_all()
+
+LIVE:
+DO NOT ENABLE
+
+FINAL STATUS:
+PRE-LIVE READY
+(with documented testing gaps above)
+========================================

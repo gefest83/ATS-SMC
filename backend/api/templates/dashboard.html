@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATS-SMC Dashboard</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0e17;--card:#111827;--border:#1e293b;--text:#e2e8f0;--dim:#64748b;--accent:#3b82f6;--green:#22c55e;--red:#ef4444;--yellow:#eab308;--orange:#f97316}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,monospace;background:var(--bg);color:var(--text);min-height:100vh}
+.header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--border)}
+.header h1{font-size:16px;font-weight:600;color:var(--accent)}
+.header .status{display:flex;align-items:center;gap:8px;font-size:13px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.dot.running{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.stopped{background:var(--red)}
+.dot.none{background:var(--dim)}
+.refresh-info{font-size:11px;color:var(--dim)}
+.container{padding:16px;display:flex;flex-direction:column;gap:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
+.card h3{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px}
+.kv{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;min-width:0}
+.kv .label{color:var(--dim)}
+.kv .value{font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kv .value.green{color:var(--green)}.kv .value.red{color:var(--red)}.kv .value.yellow{color:var(--yellow)}.kv .value.orange{color:var(--orange)}
+.chart-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
+.chart-card h3{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+#chart-container{width:100%;height:400px;border-radius:4px;overflow:hidden}
+.log-section{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
+.log-section h3{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px}
+.log-tabs{display:flex;gap:8px;margin-bottom:12px}
+.log-tab{padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;background:var(--bg);border:1px solid var(--border);color:var(--dim)}
+.log-tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.log-count{background:var(--bg);padding:2px 6px;border-radius:10px;font-size:10px;margin-left:4px}
+.log-container{max-height:300px;overflow-y:auto;font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;line-height:1.6}
+.log-entry{padding:2px 8px;border-bottom:1px solid var(--border)}
+.log-entry.error{color:var(--red);background:rgba(239,68,68,0.05)}
+.log-entry.warning{color:var(--yellow);background:rgba(234,179,8,0.05)}
+.log-entry.info{color:var(--dim)}
+.log-entry .ts{color:var(--dim);margin-right:8px}
+.empty{color:var(--dim);font-style:italic;text-align:center;padding:20px;font-size:13px}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.badge.buy{background:rgba(34,197,94,0.15);color:var(--green)}
+.badge.sell{background:rgba(239,68,68,0.15);color:var(--red)}
+.badge.none{background:rgba(100,116,139,0.15);color:var(--dim)}
+.symbol-tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.symbol-tab{padding:8px 16px;border-radius:6px;font-size:13px;cursor:pointer;background:var(--bg);border:1px solid var(--border);color:var(--dim);display:flex;align-items:center;gap:8px;transition:all 0.2s}
+.symbol-tab:hover{border-color:var(--accent);color:var(--text)}
+.symbol-tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.symbol-tab .status-dot{width:8px;height:8px;border-radius:50%}
+.symbol-tab .status-dot.healthy{background:var(--green)}
+.symbol-tab .status-dot.error{background:var(--red)}
+.symbol-tab .status-dot.stopped{background:var(--dim)}
+.symbol-tab .status-dot.starting{background:var(--yellow)}
+.symbol-tab .health-badge{padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600}
+.symbol-tab .health-badge.healthy{background:rgba(34,197,94,0.2);color:var(--green)}
+.symbol-tab .health-badge.error{background:rgba(239,68,68,0.2);color:var(--red)}
+.symbol-tab .health-badge.stopped{background:rgba(100,116,139,0.2);color:var(--dim)}
+.symbol-tab .health-badge.starting{background:rgba(234,179,8,0.2);color:var(--yellow)}
+.symbols-overview{display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:12px;margin-bottom:16px}
+.symbol-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px;cursor:pointer;transition:all 0.2s}
+.symbol-card:hover{border-color:var(--accent)}
+.symbol-card.active{border-color:var(--accent);box-shadow:0 0 8px rgba(59,130,246,0.3)}
+.symbol-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.symbol-card-name{font-weight:600;font-size:14px}
+.symbol-card-status{display:flex;align-items:center;gap:6px;font-size:12px}
+.symbol-card-data{display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:12px}
+.symbol-card-data .label{color:var(--dim)}
+.symbol-card-data .value{font-weight:500;text-align:right}
+.pnl{padding:4px 8px;border-radius:4px;font-size:12px;font-weight:600;text-align:center}
+.pnl.positive{color:var(--green)}.pnl.negative{color:var(--red)}.pnl.zero{color:var(--dim)}
+.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.detail-col{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
+.detail-col h3{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px}
+.events-table{width:100%;border-collapse:collapse;font-size:12px;font-family:'Cascadia Code','Fira Code',monospace}
+.events-table th{text-align:left;color:var(--dim);padding:6px 8px;border-bottom:1px solid var(--border);font-weight:500}
+.events-table td{padding:4px 8px;border-bottom:1px solid var(--border)}
+.events-table tr.error td{color:var(--red)}
+.events-table tr.signal td{color:var(--green)}
+.events-table tr.position td{color:var(--accent)}
+.debug-section{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
+.debug-toggle{cursor:pointer;font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:8px}
+.debug-toggle:hover{color:var(--text)}
+.debug-content{display:none;margin-top:12px;font-family:'Cascadia Code','Fira Code',monospace;font-size:11px;line-height:1.8}
+.debug-content.visible{display:block}
+.debug-entry{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px;margin-bottom:8px}
+.debug-entry .symbol-name{color:var(--accent);font-weight:600;margin-bottom:4px}
+.debug-key{color:var(--dim)}
+.debug-val{color:var(--text)}
+.health-bar{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.health-item{display:flex;align-items:center;gap:6px;font-size:13px;padding:6px 12px;background:var(--card);border:1px solid var(--border);border-radius:6px}
+.health-dot{width:10px;height:10px;border-radius:50%}
+.health-dot.healthy{background:var(--green);box-shadow:0 0 4px var(--green)}
+.health-dot.error{background:var(--red);box-shadow:0 0 4px var(--red)}
+.health-dot.stopped{background:var(--dim)}
+.health-dot.starting{background:var(--yellow)}
+.summary-table{width:100%;border-collapse:collapse;font-size:13px}
+.summary-table th{text-align:left;color:var(--dim);padding:8px 12px;border-bottom:2px solid var(--border);font-weight:500;text-transform:uppercase;font-size:11px;letter-spacing:0.5px}
+.summary-table td{padding:8px 12px;border-bottom:1px solid var(--border)}
+.summary-table tr:hover{background:rgba(59,130,246,0.05)}
+.positive{color:var(--green)}.negative{color:var(--red)}.neutral{color:var(--dim)}
+.tf-selector{display:flex;gap:4px}
+.tf-btn{padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:inherit;transition:all 0.2s}
+.tf-btn:hover{border-color:var(--accent);color:var(--text)}
+.tf-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>ATS-SMC v48 Dashboard</h1>
+  <div style="display:flex;align-items:center;gap:16px">
+    <div class="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Loading...</span>
+    </div>
+    <div class="refresh-info" id="refreshInfo"></div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- ENGINE OVERVIEW -->
+  <div class="card">
+    <h3>Engine Overview</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+      <div class="kv"><span class="label">Type</span><span class="value" id="engType">-</span></div>
+      <div class="kv"><span class="label">Status</span><span class="value" id="engStatus">-</span></div>
+      <div class="kv"><span class="label">Mode</span><span class="value" id="engMode">-</span></div>
+      <div class="kv"><span class="label">Exchange</span><span class="value" id="engExchange">-</span></div>
+      <div class="kv"><span class="label">Timeframe</span><span class="value" id="engTimeframe">-</span></div>
+      <div class="kv"><span class="label">Bots</span><span class="value" id="engBots">-</span></div>
+      <div class="kv"><span class="label">Tasks</span><span class="value" id="engTasks">-</span></div>
+      <div class="kv"><span class="label">Healthy</span><span class="value" id="engHealthy">-</span></div>
+      <div class="kv"><span class="label">Errors</span><span class="value" id="engErrors">-</span></div>
+      <div class="kv"><span class="label">Started</span><span class="value" id="engStarted">-</span></div>
+      <div class="kv"><span class="label">Uptime</span><span class="value" id="engUptime">-</span></div>
+      <div class="kv"><span class="label">Heartbeat</span><span class="value" id="engHeartbeat">-</span></div>
+    </div>
+  </div>
+
+  <!-- Symbol Tabs -->
+  <div class="symbol-tabs" id="symbolTabs"></div>
+
+  <!-- Symbols Overview Cards -->
+  <div class="symbols-overview" id="symbolsOverview"></div>
+
+  <!-- MULTI-SYMBOL SUMMARY TABLE -->
+  <div class="card">
+    <h3>Multi-Symbol Summary</h3>
+    <div style="overflow-x:auto">
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Status</th>
+            <th>Signal</th>
+            <th>Position</th>
+            <th>Score</th>
+            <th>PnL</th>
+            <th>Loop</th>
+          </tr>
+        </thead>
+        <tbody id="summaryBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SELECTED SYMBOL DETAIL -->
+  <div class="detail-grid" id="symbolDetail">
+    <div class="detail-col">
+      <h3>Market</h3>
+      <div class="kv"><span class="label">Price</span><span class="value" id="mktPrice">-</span></div>
+      <div class="kv"><span class="label">Trend</span><span class="value" id="mktTrend">-</span></div>
+      <div class="kv"><span class="label">ATR</span><span class="value" id="mktATR">-</span></div>
+      <div class="kv"><span class="label">FVGs</span><span class="value" id="mktFVG">-</span></div>
+      <div class="kv"><span class="label">Order Blocks</span><span class="value" id="mktOB">-</span></div>
+      <div class="kv"><span class="label">BOS</span><span class="value" id="mktBOS">-</span></div>
+      <div class="kv"><span class="label">CHOCH</span><span class="value" id="mktCHOCH">-</span></div>
+    </div>
+    <div class="detail-col">
+      <h3>Signal</h3>
+      <div class="kv"><span class="label">Score</span><span class="value" id="sigScore">-</span></div>
+      <div class="kv"><span class="label">Last Signal</span><span class="value" id="sigLast">-</span></div>
+      <div class="kv"><span class="label">Entry</span><span class="value" id="sigEntry">-</span></div>
+      <div class="kv"><span class="label">Stop Loss</span><span class="value" id="sigSL">-</span></div>
+      <div class="kv"><span class="label">TP1</span><span class="value" id="sigTP1">-</span></div>
+      <div class="kv"><span class="label">TP2</span><span class="value" id="sigTP2">-</span></div>
+      <div class="kv"><span class="label">TP3</span><span class="value" id="sigTP3">-</span></div>
+    </div>
+    <div class="detail-col">
+      <h3>Position / Risk</h3>
+      <div class="kv"><span class="label">Status</span><span class="value" id="posStatus">-</span></div>
+      <div class="kv"><span class="label">Side</span><span class="value" id="posSide">-</span></div>
+      <div class="kv"><span class="label">Symbol</span><span class="value" id="posSymbol">-</span></div>
+      <div class="kv"><span class="label">Quantity</span><span class="value" id="posQty">-</span></div>
+      <div class="kv"><span class="label">Entry</span><span class="value" id="posEntry">-</span></div>
+      <div class="kv"><span class="label">Current</span><span class="value" id="posCurrent">-</span></div>
+      <div class="kv"><span class="label">Opened At</span><span class="value" id="posOpenedAt">-</span></div>
+      <div class="kv"><span class="label">SL</span><span class="value" id="posSL">-</span></div>
+      <div class="kv"><span class="label">TP1 / TP2 / TP3</span><span class="value" id="posTP">-</span></div>
+      <div class="kv"><span class="label">Unrealized PnL</span><span class="value" id="posPnL">-</span></div>
+      <div class="kv"><span class="label">Risk Per Trade</span><span class="value" id="riskPerTrade">-</span></div>
+      <div class="kv"><span class="label">Max Open Trades</span><span class="value" id="riskMax">-</span></div>
+      <div class="kv"><span class="label">Current Equity</span><span class="value" id="riskEquity">-</span></div>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="chart-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="margin-bottom:0">Candlestick Chart</h3>
+      <div class="tf-selector" id="tfSelector">
+        <button class="tf-btn" data-tf="1m" onclick="setChartTimeframe('1m',this)">1m</button>
+        <button class="tf-btn" data-tf="5m" onclick="setChartTimeframe('5m',this)">5m</button>
+        <button class="tf-btn active" data-tf="15m" onclick="setChartTimeframe('15m',this)">15m</button>
+        <button class="tf-btn" data-tf="30m" onclick="setChartTimeframe('30m',this)">30m</button>
+        <button class="tf-btn" data-tf="1h" onclick="setChartTimeframe('1h',this)">1h</button>
+        <button class="tf-btn" data-tf="4h" onclick="setChartTimeframe('4h',this)">4h</button>
+        <button class="tf-btn" data-tf="1d" onclick="setChartTimeframe('1d',this)">1d</button>
+      </div>
+    </div>
+    <div id="chart-container"></div>
+  </div>
+
+  <!-- EVENTS / ACTIVITY LOG -->
+  <div class="card">
+    <h3>Events / Activity Log</h3>
+    <div style="max-height:300px;overflow-y:auto">
+      <table class="events-table">
+        <thead>
+          <tr><th>Time</th><th>Symbol</th><th>Event</th><th>Details</th></tr>
+        </thead>
+        <tbody id="eventsBody">
+          <tr><td colspan="4" class="empty">No events yet</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ENGINE DEBUG -->
+  <div class="debug-section">
+    <div class="debug-toggle" onclick="toggleDebug()">
+      <span id="debugArrow">&#9654;</span> ENGINE DEBUG
+    </div>
+    <div class="debug-content" id="debugContent"></div>
+  </div>
+
+  <!-- Logs -->
+  <div class="log-section">
+    <h3>Logs</h3>
+    <div class="log-tabs">
+      <div class="log-tab active" data-filter="all" onclick="setLogFilter('all',this)">All <span class="log-count" id="logAllCount">0</span></div>
+      <div class="log-tab" data-filter="error" onclick="setLogFilter('error',this)">ERROR <span class="log-count" id="logErrorCount">0</span></div>
+      <div class="log-tab" data-filter="warning" onclick="setLogFilter('warning',this)">WARNING <span class="log-count" id="logWarnCount">0</span></div>
+      <div class="log-tab" data-filter="info" onclick="setLogFilter('info',this)">INFO <span class="log-count" id="logInfoCount">0</span></div>
+    </div>
+    <div class="log-container" id="logContainer">
+      <div class="empty">Loading logs...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let chart = null;
+let candleSeries = null;
+let volumeSeries = null;
+let logFilter = 'all';
+let logs = [];
+let serverLogs = [];
+let selectedSymbol = null;
+let symbolsData = [];
+let engineData = null;
+let riskData = null;
+let positionPriceLines = [];
+let positionMarker = null;
+let currentCandleSymbol = null;
+let chartTimeframe = '15m';
+
+let _refreshGeneration = 0;
+let _positionGeneration = 0;
+let _chartGeneration = 0;
+
+function initChart() {
+  const container = document.getElementById('chart-container');
+  chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth,
+    height: 400,
+    layout: {
+      background: { color: '#111827' },
+      textColor: '#94a3b8',
+      localization: {
+        timeFormatter: (time) => {
+          const d = new Date(time * 1000);
+          const utc3 = new Date(d.getTime() + 3 * 3600 * 1000);
+          const hh = String(utc3.getUTCHours()).padStart(2, '0');
+          const mm = String(utc3.getUTCMinutes()).padStart(2, '0');
+          return hh + ':' + mm;
+        },
+        dateFormat: 'dd MMM yyyy',
+      },
+    },
+    grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    timeScale: {
+      timeVisible: true,
+      secondsVisible: false,
+      tickMarkFormatter: (time) => {
+        const d = new Date(time * 1000);
+        const utc3 = new Date(d.getTime() + 3 * 3600 * 1000);
+        const hh = String(utc3.getUTCHours()).padStart(2, '0');
+        const mm = String(utc3.getUTCMinutes()).padStart(2, '0');
+        const dd = String(utc3.getUTCDate()).padStart(2, '0');
+        const mon = String(utc3.getUTCMonth() + 1).padStart(2, '0');
+        return dd + '.' + mon + ' ' + hh + ':' + mm;
+      },
+    },
+  });
+  candleSeries = chart.addCandlestickSeries({
+    upColor: '#22c55e', downColor: '#ef4444',
+    borderUpColor: '#22c55e', borderDownColor: '#ef4444',
+    wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+  });
+  volumeSeries = chart.addHistogramSeries({
+    priceFormat: { type: 'volume' },
+    priceScaleId: 'volume',
+  });
+  chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+  new ResizeObserver(() => {
+    chart.applyOptions({ width: container.clientWidth });
+  }).observe(container);
+}
+
+function fmt(v, dec) {
+  if (v === null || v === undefined || v === '-') return '-';
+  const n = parseFloat(v);
+  if (isNaN(n)) return String(v);
+  return n.toFixed(dec || 2);
+}
+
+function fmtPrice(v) {
+  if (v === null || v === undefined) return '-';
+  const n = parseFloat(v);
+  if (isNaN(n)) return String(v);
+  if (n >= 1000) return n.toFixed(2);
+  if (n >= 1) return n.toFixed(4);
+  return n.toFixed(6);
+}
+
+function setVal(id, text, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'value' + (cls ? ' ' + cls : '');
+}
+
+function selectSymbol(symbol) {
+  if (selectedSymbol === symbol) return;
+  selectedSymbol = symbol;
+
+  _refreshGeneration++;
+  _positionGeneration++;
+  _chartGeneration++;
+
+  clearPositionOverlays();
+
+  currentCandleSymbol = null;
+  document.querySelectorAll('.symbol-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.symbol === symbol);
+  });
+  document.querySelectorAll('.symbol-card').forEach(card => {
+    card.classList.toggle('active', card.dataset.symbol === symbol);
+  });
+
+  updateSymbolDetails();
+  refreshChart();
+  refreshPositionFast();
+}
+
+function updateSymbolTabs(symbols) {
+  const container = document.getElementById('symbolTabs');
+  container.innerHTML = symbols.map(s => {
+    const health = s.health || 'STOPPED';
+    const healthClass = health.toLowerCase();
+    return `
+      <div class="symbol-tab ${s.symbol === selectedSymbol ? 'active' : ''}"
+           data-symbol="${s.symbol}" onclick="selectSymbol('${s.symbol}')">
+        <span class="status-dot ${healthClass}"></span>
+        <span>${s.symbol}</span>
+        <span class="health-badge ${healthClass}">${health}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function _safePnl(pos, s) {
+  if (!pos) return null;
+  const raw = pos.unrealized_pnl;
+  if (raw === null || raw === undefined) return null;
+  const n = parseFloat(raw);
+  return isNaN(n) ? null : n;
+}
+
+function updateSymbolsOverview(symbols) {
+  const container = document.getElementById('symbolsOverview');
+  container.innerHTML = symbols.map(s => {
+    const a = s.analysis || {};
+    const price = a.current_price ? fmtPrice(a.current_price) : '-';
+    const score = a.score !== undefined ? a.score : '-';
+    const signal = a.signal || 'NONE';
+    const pnl = _safePnl(s.position);
+    const health = s.health || 'STOPPED';
+    return `
+      <div class="symbol-card ${s.symbol === selectedSymbol ? 'active' : ''}"
+           data-symbol="${s.symbol}" onclick="selectSymbol('${s.symbol}')">
+        <div class="symbol-card-header">
+          <span class="symbol-card-name">${s.symbol}</span>
+          <div class="symbol-card-status">
+            <span class="status-dot ${health.toLowerCase()}"></span>
+            <span>${s.running ? 'RUNNING' : 'STOPPED'}</span>
+          </div>
+        </div>
+        <div class="symbol-card-data">
+          <span class="label">Price</span><span class="value">${price}</span>
+          <span class="label">Score</span><span class="value">${score}</span>
+          <span class="label">Signal</span><span class="value">${signal}</span>
+          <span class="label">Position</span><span class="value">${s.has_position ? (s.position ? s.position.side : 'OPEN') : 'NONE'}</span>
+          <span class="label">PnL</span><span class="value ${pnl !== null ? (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : 'neutral') : 'neutral'}">${s.has_position ? (pnl !== null ? (pnl > 0 ? '+' : '') + fmt(pnl) : '0.00') : '-'}</span>
+          <span class="label">Loop</span><span class="value">${s.loop_count || 0}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateSummaryTable(symbols) {
+  const body = document.getElementById('summaryBody');
+  if (!symbols.length) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">No data</td></tr>';
+    return;
+  }
+  body.innerHTML = symbols.map(s => {
+    const a = s.analysis || {};
+    const signal = a.signal || 'NONE';
+    const signalClass = signal === 'BUY' ? 'positive' : signal === 'SELL' ? 'negative' : 'neutral';
+    const pos = s.position;
+    const posStr = pos ? pos.side : 'NONE';
+    const pnl = _safePnl(pos);
+    return `
+      <tr>
+        <td style="font-weight:600">${s.symbol}</td>
+        <td>${s.running ? 'RUNNING' : 'STOPPED'}</td>
+        <td class="${signalClass}">${signal}</td>
+        <td>${posStr}</td>
+        <td>${a.score !== undefined ? a.score : '-'}</td>
+        <td class="${pnl !== null ? (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : 'neutral') : 'neutral'}">${s.has_position ? (pnl !== null ? (pnl > 0 ? '+' : '') + fmt(pnl) : '0.00') : '-'}</td>
+        <td>${s.last_loop_time || '-'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function updateSymbolDetails() {
+  const symbol = symbolsData.find(s => s.symbol === selectedSymbol);
+  if (!symbol) return;
+  const a = symbol.analysis || {};
+  const struct = a.structure || {};
+  const trend = (struct.trend && struct.trend[0]) ? struct.trend[0].type : 'NONE';
+  setVal('mktPrice', a.current_price ? fmtPrice(a.current_price) : '-');
+  setVal('mktTrend', trend, trend === 'BULLISH' ? 'green' : trend === 'BEARISH' ? 'red' : '');
+  setVal('mktATR', a.atr ? fmt(a.atr) : '-');
+  setVal('mktFVG', a.fvgs_count || 0);
+  setVal('mktOB', a.ob_count || 0);
+  setVal('mktBOS', (struct.bos || []).length);
+  setVal('mktCHOCH', (struct.choch || []).length);
+
+  const score = a.score;
+  setVal('sigScore', score, score > 0 ? 'green' : score < 0 ? 'red' : '');
+
+  const signal = a.signal;
+  if (signal === 'BUY') { setVal('sigLast', 'BUY', 'green'); }
+  else if (signal === 'SELL') { setVal('sigLast', 'SELL', 'red'); }
+  else { setVal('sigLast', 'NONE', ''); }
+
+  const ls = symbol.last_signal;
+  const pos = symbol.position;
+  if (ls && ls.side && (ls.entry !== undefined && ls.entry !== null)) {
+    setVal('sigEntry', fmtPrice(ls.entry));
+    setVal('sigSL', fmtPrice(ls.stop_loss), 'red');
+    setVal('sigTP1', fmtPrice(ls.tp1), 'green');
+    setVal('sigTP2', fmtPrice(ls.tp2), 'green');
+    setVal('sigTP3', fmtPrice(ls.tp3), 'green');
+  } else {
+    setVal('sigEntry', '-');
+    setVal('sigSL', '-');
+    setVal('sigTP1', '-');
+    setVal('sigTP2', '-');
+    setVal('sigTP3', '-');
+  }
+
+  if (pos) {
+    setVal('posStatus', 'OPEN', 'green');
+    setVal('posSide', pos.side || '-', pos.side === 'BUY' ? 'green' : pos.side === 'SELL' ? 'red' : '');
+    setVal('posSymbol', symbol.symbol);
+    setVal('posQty', pos.size ? fmt(pos.size, 6) : '-');
+    setVal('posEntry', pos.entry ? fmtPrice(pos.entry) : '-');
+    setVal('posCurrent', a.current_price ? fmtPrice(a.current_price) : '-');
+    if (pos.opened_at) {
+      const oa = typeof pos.opened_at === 'number' ? pos.opened_at : parseFloat(pos.opened_at);
+      if (!isNaN(oa) && oa > 0) {
+        const d = new Date(oa * 1000);
+        const utc3 = new Date(d.getTime() + 3 * 3600 * 1000);
+        const dd = String(utc3.getUTCDate()).padStart(2, '0');
+        const mm = String(utc3.getUTCMonth() + 1).padStart(2, '0');
+        const hh = String(utc3.getUTCHours()).padStart(2, '0');
+        const mi = String(utc3.getUTCMinutes()).padStart(2, '0');
+        setVal('posOpenedAt', dd + '.' + mm + ' ' + hh + ':' + mi, '');
+      } else {
+        setVal('posOpenedAt', '-', '');
+      }
+    } else {
+      setVal('posOpenedAt', '-', '');
+    }
+    setVal('posSL', pos.sl ? fmtPrice(pos.sl) : '-', 'red');
+    setVal('posTP', [pos.tp1, pos.tp2, pos.tp3].map(t => t ? fmtPrice(t) : '-').join(' / '), 'green');
+    const pnl = _safePnl(pos);
+    setVal('posPnL', pnl !== null ? (pnl >= 0 ? '+' : '') + fmt(pnl) : '0.00', pnl !== null ? (pnl > 0 ? 'green' : pnl < 0 ? 'red' : '') : '');
+  } else {
+    setVal('posStatus', 'NONE', '');
+    setVal('posSide', '-', '');
+    setVal('posSymbol', symbol.symbol);
+    setVal('posQty', '-');
+    setVal('posEntry', '-');
+    setVal('posCurrent', a.current_price ? fmtPrice(a.current_price) : '-');
+    setVal('posOpenedAt', '-', '');
+    setVal('posSL', '-');
+    setVal('posTP', '-');
+    setVal('posPnL', 'No Position', '');
+  }
+  if (riskData) {
+    setVal('riskPerTrade', (riskData.risk_per_trade_pct * 100).toFixed(1) + '%');
+    setVal('riskMax', riskData.max_open_trades);
+    setVal('riskEquity', fmt(riskData.current_equity));
+  }
+}
+
+function updateEngine(s) {
+  const running = s.running;
+  document.getElementById('statusDot').className = 'dot ' + (running ? 'running' : 'stopped');
+  document.getElementById('statusText').textContent = running ? 'RUNNING' : 'STOPPED';
+  setVal('engMode', (s.trading_mode || '-').toUpperCase());
+  setVal('engExchange', s.exchange || '-');
+  setVal('engTimeframe', s.timeframe || '-');
+  const e = s.engine || {};
+  setVal('engType', e.type || 'N/A');
+  setVal('engStatus', e.status || (running ? 'RUNNING' : 'STOPPED'), running ? 'green' : 'red');
+  setVal('engBots', e.bot_count !== undefined ? e.bot_count : 'N/A');
+  setVal('engTasks', e.task_count !== undefined ? e.task_count : 'N/A');
+  setVal('engHealthy', e.healthy_count !== undefined ? e.healthy_count : 'N/A', 'green');
+  setVal('engErrors', e.error_count !== undefined ? e.error_count : 'N/A', e.error_count > 0 ? 'red' : '');
+  setVal('engStarted', e.started_at || 'N/A');
+  setVal('engUptime', e.uptime || 'N/A');
+  setVal('engHeartbeat', e.last_heartbeat || 'N/A');
+}
+
+function updateEvents(events) {
+  const body = document.getElementById('eventsBody');
+  if (!events || !events.length) {
+    body.innerHTML = '<tr><td colspan="4" class="empty">No events yet</td></tr>';
+    return;
+  }
+  body.innerHTML = events.map(ev => {
+    const cls = ev.event.includes('ERROR') ? 'error' : ev.event.includes('SIGNAL') ? 'signal' : ev.event.includes('POSITION') ? 'position' : '';
+    return `<tr class="${cls}"><td>${ev.time}</td><td>${ev.symbol}</td><td>${ev.event}</td><td>${ev.details || ''}</td></tr>`;
+  }).join('');
+}
+
+function updateDebug(symbols, engine) {
+  const container = document.getElementById('debugContent');
+  let html = '';
+  if (engine) {
+    html += `<div class="debug-entry">
+      <div class="symbol-name">MultiSymbolEngine</div>
+      <span class="debug-key">Type:</span> <span class="debug-val">${engine.type || 'N/A'}</span><br>
+      <span class="debug-key">Status:</span> <span class="debug-val">${engine.status || 'N/A'}</span><br>
+      <span class="debug-key">Bots:</span> <span class="debug-val">${engine.bot_count || 0}</span> &nbsp;
+      <span class="debug-key">Tasks:</span> <span class="debug-val">${engine.task_count || 0}</span><br>
+      <span class="debug-key">Started:</span> <span class="debug-val">${engine.started_at || 'N/A'}</span> &nbsp;
+      <span class="debug-key">Uptime:</span> <span class="debug-val">${engine.uptime || 'N/A'}</span>
+    </div>`;
+  }
+  symbols.forEach(s => {
+    html += `<div class="debug-entry">
+      <div class="symbol-name">${s.symbol}</div>
+      <span class="debug-key">Health:</span> <span class="debug-val">${s.health || 'N/A'}</span> &nbsp;
+      <span class="debug-key">Bot Running:</span> <span class="debug-val">${s.running}</span><br>
+      <span class="debug-key">Loop Count:</span> <span class="debug-val">${s.loop_count || 0}</span> &nbsp;
+      <span class="debug-key">Last Loop:</span> <span class="debug-val">${s.last_loop_time || 'N/A'}</span><br>
+      <span class="debug-key">Last Error:</span> <span class="debug-val">${s.last_error || 'None'}</span>
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function toggleDebug() {
+  const el = document.getElementById('debugContent');
+  const arrow = document.getElementById('debugArrow');
+  el.classList.toggle('visible');
+  arrow.textContent = el.classList.contains('visible') ? '\u25BC' : '\u25B6';
+}
+
+function updateChart(candles) {
+  if (!candles || !candles.length) return;
+  const data = candles.map(c => ({
+    time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+  }));
+  candleSeries.setData(data);
+  const volData = candles.map(c => ({
+    time: c.time, value: c.volume,
+    color: c.close >= c.open ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)',
+  }));
+  volumeSeries.setData(volData);
+}
+
+function clearPositionOverlays() {
+  if (!candleSeries) return;
+  for (const line of positionPriceLines) {
+    try { candleSeries.removePriceLine(line); } catch (e) {}
+  }
+  positionPriceLines = [];
+  positionMarker = null;
+  try { candleSeries.setMarkers([]); } catch (e) {}
+}
+
+function updatePositionOverlays() {
+  clearPositionOverlays();
+  if (!candleSeries || !selectedSymbol) return;
+  const symbol = symbolsData.find(s => s.symbol === selectedSymbol);
+  if (!symbol || !symbol.position) return;
+  const pos = symbol.position;
+  const isBuy = pos.side === 'BUY';
+
+  function addLine(price, color, title, style, width) {
+    if (!price) return;
+    const p = parseFloat(price);
+    if (isNaN(p) || p <= 0) return;
+    const line = candleSeries.createPriceLine({
+      price: p,
+      color: color,
+      lineWidth: width || 2,
+      lineStyle: style || LightweightCharts.LineStyle.Solid,
+      axisLabelVisible: false,
+      title: '',
+    });
+    positionPriceLines.push(line);
+  }
+
+  const entryP = pos.entry ? parseFloat(pos.entry) : null;
+  const slP = pos.sl ? parseFloat(pos.sl) : null;
+  const tp1P = pos.tp1 ? parseFloat(pos.tp1) : null;
+  const tp2P = pos.tp2 ? parseFloat(pos.tp2) : null;
+  const tp3P = pos.tp3 ? parseFloat(pos.tp3) : null;
+
+  if (entryP && entryP > 0) {
+    const entryColor = isBuy ? '#22c55e' : '#ef4444';
+    const entryLabel = isBuy ? 'LONG ENTRY' : 'SHORT ENTRY';
+    addLine(entryP, entryColor, entryLabel, LightweightCharts.LineStyle.Solid, 3);
+  }
+
+  if (slP && slP > 0) {
+    addLine(slP, '#ef4444', 'STOP LOSS', LightweightCharts.LineStyle.Dashed, 2);
+  }
+  if (tp1P && tp1P > 0) {
+    addLine(tp1P, '#22c55e', 'TP1', LightweightCharts.LineStyle.Dotted, 1);
+  }
+  if (tp2P && tp2P > 0) {
+    addLine(tp2P, '#4ade80', 'TP2', LightweightCharts.LineStyle.Dotted, 1);
+  }
+  if (tp3P && tp3P > 0) {
+    addLine(tp3P, '#86efac', 'TP3', LightweightCharts.LineStyle.Dotted, 1);
+  }
+
+  if (entryP && entryP > 0) {
+    try {
+      const data = candleSeries.data();
+      let markerTime = undefined;
+      const openedAt = pos.opened_at;
+      if (openedAt && data && data.length > 0) {
+        const openedAtSec = typeof openedAt === 'number' ? openedAt : parseFloat(openedAt);
+        if (!isNaN(openedAtSec)) {
+          let bestCandle = null;
+          let bestDiff = Infinity;
+          for (let i = 0; i < data.length; i++) {
+            const candleTime = data[i].time;
+            const diff = Math.abs(candleTime - openedAtSec);
+            if (diff < bestDiff) {
+              bestDiff = diff;
+              bestCandle = data[i];
+            }
+          }
+          if (bestCandle) {
+            markerTime = bestCandle.time;
+          }
+        }
+      }
+      if (!markerTime && data && data.length > 0) {
+        markerTime = data[data.length - 1].time;
+      }
+      const markers = [{
+        time: markerTime,
+        position: isBuy ? 'belowBar' : 'aboveBar',
+        color: isBuy ? '#22c55e' : '#ef4444',
+        shape: isBuy ? 'arrowUp' : 'arrowDown',
+        text: isBuy ? 'LONG ENTRY' : 'SHORT ENTRY',
+      }];
+      if (markers[0].time) {
+        candleSeries.setMarkers(markers);
+      }
+    } catch (e) {
+      try {
+        const markerLine = candleSeries.createPriceLine({
+          price: entryP,
+          color: isBuy ? '#22c55e' : '#ef4444',
+          lineWidth: 3,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          axisLabelVisible: false,
+          title: '',
+        });
+        positionPriceLines.push(markerLine);
+      } catch (e2) {}
+    }
+  }
+}
+
+function setLogFilter(filter, el) {
+  logFilter = filter;
+  document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderLogs();
+}
+
+function renderLogs() {
+  const container = document.getElementById('logContainer');
+  const allLogs = serverLogs.concat(logs);
+  const filtered = logFilter === 'all' ? allLogs : allLogs.filter(l => l.level === logFilter);
+  document.getElementById('logAllCount').textContent = allLogs.length;
+  document.getElementById('logErrorCount').textContent = allLogs.filter(l => l.level === 'error').length;
+  document.getElementById('logWarnCount').textContent = allLogs.filter(l => l.level === 'warning').length;
+  document.getElementById('logInfoCount').textContent = allLogs.filter(l => l.level === 'info').length;
+  if (!filtered.length) {
+    container.innerHTML = '<div class="empty">No logs</div>';
+    return;
+  }
+  container.innerHTML = filtered.map(l => {
+    const logger = l.logger ? '<span style="color:#3b82f6;margin-right:4px">' + l.logger + '</span>' : '';
+    const sym = l.symbol ? '<span style="color:#eab308;margin-right:4px">' + l.symbol + '</span>' : '';
+    return '<div class="log-entry ' + l.level + '">' +
+    '<span class="ts">' + l.ts + '</span>' +
+    '<span style="color:' + (l.level === 'error' ? '#ef4444' : l.level === 'warning' ? '#eab308' : '#64748b') + ';margin-right:4px;font-weight:600">' + (l.level || '').toUpperCase() + '</span>' +
+    logger + sym +
+    '<span>' + l.msg + '</span></div>';
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function addLog(level, msg) {
+  const ts = new Date().toLocaleTimeString();
+  logs.unshift({ level, msg, ts });
+  if (logs.length > 50) logs.pop();
+  renderLogs();
+}
+
+function setChartTimeframe(tf, el) {
+  chartTimeframe = tf;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  currentCandleSymbol = null;
+  refreshChart();
+}
+
+async function refreshChart() {
+  if (!selectedSymbol) return;
+  const gen = ++_chartGeneration;
+  try {
+    const ohlcvResp = await fetch('/dashboard/ohlcv?symbol=' + encodeURIComponent(selectedSymbol) + '&timeframe=' + encodeURIComponent(chartTimeframe) + '&limit=200');
+    if (gen !== _chartGeneration) return;
+    const ohlcv = ohlcvResp.ok ? await ohlcvResp.json() : null;
+    if (ohlcv && ohlcv.candles) {
+      if (gen !== _chartGeneration) return;
+      updateChart(ohlcv.candles);
+      currentCandleSymbol = selectedSymbol;
+      updatePositionOverlays();
+    }
+  } catch (e) {}
+}
+
+async function refreshPositionFast() {
+  if (!selectedSymbol) return;
+  const gen = ++_positionGeneration;
+  try {
+    const resp = await fetch('/dashboard/position?symbol=' + encodeURIComponent(selectedSymbol));
+    if (gen !== _positionGeneration) return;
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.symbol !== selectedSymbol) return;
+    const sym = symbolsData.find(s => s.symbol === selectedSymbol);
+    if (sym) {
+      sym.has_position = data.has_position;
+      sym.position = data.position;
+      if (data.current_price && sym.analysis) {
+        sym.analysis.current_price = data.current_price;
+      }
+      updateSymbolDetails();
+      updatePositionOverlays();
+      updateSymbolsOverview(symbolsData);
+      updateSummaryTable(symbolsData);
+    }
+  } catch (e) {}
+}
+
+async function refresh() {
+  const start = Date.now();
+  const gen = ++_refreshGeneration;
+  try {
+    const [statusResp, symbolsResp, riskResp, eventsResp, logsResp] = await Promise.allSettled([
+      fetch('/status'),
+      fetch('/dashboard/symbols'),
+      fetch('/risk'),
+      fetch('/dashboard/events'),
+      fetch('/dashboard/logs'),
+    ]);
+
+    if (gen !== _refreshGeneration) return;
+
+    const status = statusResp.status === 'fulfilled' ? await statusResp.value.json() : null;
+    const symbolsResult = symbolsResp.status === 'fulfilled' ? await symbolsResp.value.json() : null;
+    riskData = riskResp.status === 'fulfilled' ? await riskResp.value.json() : null;
+    const eventsResult = eventsResp.status === 'fulfilled' ? await eventsResp.value.json() : null;
+    const logsResult = logsResp.status === 'fulfilled' ? await logsResp.value.json() : null;
+
+    if (gen !== _refreshGeneration) return;
+
+    if (status) {
+      engineData = status.engine || null;
+      updateEngine(status);
+    }
+    if (symbolsResult && symbolsResult.symbols) {
+      symbolsData = symbolsResult.symbols;
+      if (!selectedSymbol && symbolsData.length > 0) {
+        selectedSymbol = symbolsData[0].symbol;
+      }
+      updateSymbolTabs(symbolsData);
+      updateSymbolsOverview(symbolsData);
+      updateSummaryTable(symbolsData);
+      updateSymbolDetails();
+      updateDebug(symbolsData, engineData);
+    }
+    if (eventsResult && eventsResult.events) {
+      updateEvents(eventsResult.events);
+    }
+    if (logsResult && logsResult.logs) {
+      serverLogs = logsResult.logs.map(l => ({
+        level: l.level,
+        msg: l.message,
+        ts: l.time,
+        logger: l.logger,
+      }));
+      renderLogs();
+    }
+
+    await refreshChart();
+
+    const now = new Date();
+    document.getElementById('refreshInfo').textContent = 'Updated ' + now.toLocaleTimeString();
+  } catch (e) {
+    addLog('error', 'Refresh failed: ' + e.message);
+  }
+  const elapsed = Date.now() - start;
+  document.getElementById('refreshInfo').textContent =
+    'Updated ' + new Date().toLocaleTimeString() + ' (' + elapsed + 'ms)';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initChart();
+  refresh();
+  setInterval(refresh, 5000);
+  setInterval(refreshPositionFast, 2000);
+});
+</script>
+</body>
+</html>

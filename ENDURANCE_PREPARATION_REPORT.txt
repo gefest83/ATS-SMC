@@ -1,0 +1,115 @@
+========================================
+ATS-SMC v48 ENDURANCE PREPARATION
+========================================
+
+CONFIG:
+  TRADING_MODE=testnet           OK
+  TESTNET_TRADING_ENABLED=true   OK
+  LIVE_TRADING_ENABLED=false     OK
+  EXCHANGE=binance               OK
+  EXCHANGE_MODE=testnet           OK
+  TELEGRAM_BOT_TOKEN=PRESENT     OK
+  TELEGRAM_CHAT_ID=PRESENT       OK
+  SANDBOX: not a project param (EXCHANGE_MODE used instead)
+  No changes made to .env.
+
+STARTUP:
+  Command: py -3.13 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+  AUTO_START_ENGINE=false → set to true or POST /engine/start
+  Lifespan handles: strategy load, engine start, graceful shutdown
+  Dependencies: fastapi, uvicorn, sqlalchemy, asyncpg, ccxt, pydantic,
+                numpy, pandas, python-telegram-bot, python-dotenv
+  Required env: TRADING_MODE, EXCHANGE, EXCHANGE_MODE, API keys, Telegram
+  PostgreSQL: NOT required for testnet spot (positions held in-memory).
+              With PG: positions/orders persisted. Without: in-memory only.
+
+LONG-RUN RISKS:
+  1. Log rotation missing: logs/bot_execution.log grows unbounded.
+     → Monitor file size, truncate if >100MB during 72h run.
+  2. No PostgreSQL locally: restart loses all state.
+     → Minimize restarts. Recovery from exchange on restart.
+  3. RiskManager._closed_event_ids: in-memory set, not persisted.
+     → Could grow over 72h if many positions opened. Bounded by MAX_OPEN_TRADES=3.
+  4. OrderManager.open_orders dict: cleaned on order completion.
+     → Low risk, orders removed on terminal status.
+  5. PositionManager.positions dict: cleaned on close.
+     → Low risk, positions removed on close.
+  6. No infinite retry loops found. Error sleep=10s in main loop.
+  7. WebSocket: not used (REST polling every 60s).
+  8. No unclosed sessions: exchange.close() called in stop().
+  9. asyncio tasks: all have proper cancel/await in stop().
+
+  No real bugs found. No fixes needed.
+
+MONITORING:
+  /health → {"status": "ok"}
+  /status → trading_mode, exchange, running, last_signal
+  /risk   → current_equity, open_trades, risk_per_trade_pct
+  Telegram: startup, trade open/close, errors, shutdown
+  Logs: logs/bot_execution.log (all levels)
+
+TELEGRAM:
+  Startup:      YES (send_alert called on engine start)
+  Trade open:   YES (notifier.send_alert on position open)
+  Trade close:  YES (_on_live_position_closed callback)
+  Errors:       YES (logger.error on failures, some via Telegram)
+  Shutdown:     NO explicit shutdown message sent
+  Recommendation: add shutdown notification if desired (minor)
+
+LOGGING:
+  Format: timestamp | level | name | message
+  File: logs/bot_execution.log
+  Rotation: NONE
+  Handler: 1 console + 1 file (no duplicates)
+  Risk: unbounded growth over 72h
+  Recommendation: monitor file size, truncate manually
+
+HEALTH:
+  /health endpoint: EXISTS (backend/main.py:61)
+  /status endpoint: EXISTS (backend/api/endpoints.py:224)
+  /risk endpoint:   EXISTS (backend/api/endpoints.py:302)
+  Engine task: tracked via _state["engine_task"]
+  Process alive: check via /health
+
+GRACEFUL SHUTDOWN:
+  Ctrl+C → lifespanfinally → stop_engine_state():
+    - bot.stop() persists state
+    - order_manager.stop() cancels monitor task
+    - position_manager.stop() cancels sync task
+    - telegram.stop() shuts down bot
+    - exchange.close() closes connection
+    - dispose_engine() disposes DB pool
+  All tasks properly cancelled and awaited. No dangling tasks.
+
+PRE-ENDURANCE TESTS:
+  pytest:   148 passed, 1 warning, 0 failed
+  compileall: PASS (no output = no errors)
+  imports:  PASS (all core modules load)
+
+RUNBOOK:
+  Created: TESTNET_ENDURANCE_RUNBOOK.md
+
+COMMAND TO START TESTNET:
+  py -3.13 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+  Or with auto-start:
+  Set AUTO_START_ENGINE=true in .env, then same command.
+
+KNOWN LIMITATIONS:
+  1. No log rotation (manual monitoring needed)
+  2. No PostgreSQL locally (in-memory only, restart = state loss)
+  3. No WebSocket (REST polling only, 60s interval)
+  4. No explicit shutdown Telegram notification
+  5. RiskManager event-id set not persisted (bounded by MAX_OPEN_TRADES)
+  6. Spot market: no exchange position sync (order monitor only)
+
+POSTGRESQL:
+  unavailable (no Docker locally)
+  Not required for testnet spot trading
+
+LIVE:
+  DO NOT ENABLE
+
+FINAL STATUS:
+  READY FOR 24H TESTNET
+========================================

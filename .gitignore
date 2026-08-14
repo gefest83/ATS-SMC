@@ -1,0 +1,69 @@
+# Bytecode / compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info
+dist/
+build/
+.eggs/
+*.manifest
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+nohup.out
+
+# Environment files (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
+docker-compose.dev.yml
+
+# Database dumps
+*.dump
+
+# Test coverage
+.coverage
+htmlcov/
+coverage.xml
+coverage.json
+pytest_coverage_report/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+
+# Custom
+*.bak
+*.orig
+*.rej

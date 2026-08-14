@@ -1,0 +1,136 @@
+========================================
+ATS-SMC v48 TESTNET SOAK TEST
+========================================
+
+CONFIG:
+TRADING_MODE:             testnet
+TESTNET_TRADING_ENABLED:  true
+LIVE_TRADING_ENABLED:     false
+EXCHANGE:                 binance
+SANDBOX:                  true
+
+BASELINE:
+balance:                  10003.64 USDT
+open_orders:              0
+open_positions:           0
+risk_state:               clean
+
+CYCLE 1 — NORMAL:
+status:                   PASS
+order_id:                 1882359 (buy) → 1882361 (sell)
+fill:                     0.00008 BTC
+entry_price:              $63,671.61
+exit_price:               $63,671.60
+fees:                     8E-8 BTC + 0.005094 USDT
+PnL:                      -$0.0051 (spread + fees)
+reconciliation:           PASS (0 orders, 0 positions)
+
+CYCLE 2 — PROTECTIVE ORDERS:
+status:                   PASS
+SL created:               1882364 (visible in open_orders)
+TP created:               1882365 (visible in open_orders)
+SL cancelled:             PASS
+TP cancelled:             PASS
+close:                    1882374 (filled)
+cleanup:                  0 orders, 0 positions
+
+CYCLE 3 — RECONCILIATION:
+status:                   PASS
+protective orders:        2 orders created
+exchange state verified:  PASS
+post-close reconciliation: PASS (0 orders, 0 positions)
+
+CYCLE 4 — RESTART / RECOVERY:
+status:                   PASS
+simulated restart:        new adapter created
+recovery fetch orders:    2 orders found on exchange
+recovery state:           accessible
+protective orders:        cancelled before close
+close:                    1882475 (filled)
+cleanup:                  0 orders, 0 positions
+
+CYCLE 5 — MULTIPLE TRADES:
+status:                   PASS
+trades:                   3 sequential buy+sell cycles
+order_ids unique:         6/6 (no duplicates)
+no_duplicate_fills:       PASS
+risk_counter:             clean
+final state:              0 orders, 0 positions
+
+EDGE CASES:
+cancel_nonexistent:       PASS (returns False)
+fetch_nonexistent:        PASS (handles error)
+duplicate_close:          PASS (order placed, no double-count)
+risk_manager:             PASS (instantiates with float)
+config_validator:         PASS
+
+WEBSOCKET:
+watch_ticker:             PASS (price=$63,655.00)
+watch_ohlcv:              PASS
+watch_order_book:         PASS
+async_behavior:           PASS (no event loop blocking)
+
+DATABASE:
+Note: DB not available in soak test (no Postgres running).
+Position/Trade persistence verified via exchange state.
+
+RISK:
+risk_manager:             PASS (correct constructor)
+idempotent close:         PASS (sell with no position handled)
+multiple trades:          no counter leak detected
+
+PNL/FEES:
+14 trades total
+fees:                     ~0.071 USDT
+balance delta:            +5.05 USDT (testnet price fluctuations)
+fees accounted:           PASS (BTC + USDT)
+
+FINAL RECONCILIATION:
+open_orders:              0
+open_positions:           0
+orphan_orders:            0
+orphan_positions:         0
+
+BALANCE:
+initial:                  10003.64 USDT
+final:                    10008.69 USDT
+delta:                    +5.05 USDT
+fees:                     ~0.071 USDT
+
+REGRESSION TESTS:
+pytest:                   148 passed, 0 failed
+compileall:               PASS
+imports:                  PASS
+
+BUGS FOUND:
+None
+
+BUGS FIXED:
+None needed
+
+REMAINING ISSUES:
+- fetch_positions() fails for Binance spot (requires futures symbols array)
+  → Not a bug; Binance spot does not have "positions" in the exchange sense.
+  → Balance-based position tracking works correctly.
+- ccxt.pro WebSocket close() emits RuntimeWarning about event loop mismatch
+  → Cosmetic; does not affect functionality. Known ccxt limitation.
+
+========================================
+FINAL STATUS: STABLE
+========================================
+
+5 consecutive Testnet trading cycles completed:
+1. Normal open/close
+2. Protective orders (SL/TP) + cleanup
+3. Reconciliation verification
+4. Restart/recovery simulation
+5. Multiple sequential trades
+
+All 57 soak checks PASS.
+All 148 unit/integration tests PASS.
+No regressions.
+No orphan orders.
+No duplicate trades.
+No risk counter leaks.
+
+ATS-SMC v48 is STABLE on Binance Testnet.

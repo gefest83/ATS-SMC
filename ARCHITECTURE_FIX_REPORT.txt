@@ -1,0 +1,57 @@
+========================================
+ATS-SMC v48 ARCHITECTURE FIX
+SPOT + FUTURES POSITION MANAGEMENT
+========================================
+
+ROOT CAUSES FOUND:
+  1. Recovery盲目 placing protective orders for stale positions
+     → InsufficientFunds loop
+  2. No staleness detection for Spot or Futures positions
+  3. Protective orders used position.quantity instead of actual free balance
+
+FILES CHANGED:
+  backend/core/order_manager.py
+  tests/test_stale_position.py (new)
+
+FIXED FOR SPOT:
+  1. Added _check_spot_staleness(): checks if free base balance > 0
+  2. Added _get_free_base_balance(): fetches raw CCXT free BTC
+  3. Recovery now closes stale Spot positions in DB
+  4. Protective orders capped to min(position.quantity, free_base)
+  5. Emergency flatten capped to free_base
+  6. _resize_stop_loss capped to free_base
+  7. _resize_take_profits capped to free_base
+  8. _ensure_position_protection uses protected_qty
+
+FIXED FOR FUTURES:
+  1. Added _check_futures_staleness(): checks if position exists on exchange
+  2. Recovery closes stale Futures positions in DB
+  3. No free_base cap needed (futures uses margin, not wallet balance)
+  4. fetch_positions(symbol) correctly passes symbol to Binance
+
+STALE POSITION HANDLING:
+  - Spot: if free_base <= 0 → close position in DB with reason "stale_not_on_exchange"
+  - Futures: if position not found on exchange → close in DB with same reason
+  - Existing trade history preserved in DB
+  - No duplicate orders created
+
+REGRESSION TESTS ADDED:
+  test_stale_position.py:
+    - test_spot_stale_position_closed_in_db
+    - test_spot_position_with_balance_not_stale
+    - test_futures_stale_position_closed_in_db
+    - test_futures_position_on_exchange_not_stale
+    - test_protective_qty_capped_to_free_base
+
+PYTEST:
+  153 passed (148 original + 5 new), 0 failed
+
+COMPILEALL:
+  PASS
+
+LIVE:
+  DO NOT ENABLE
+
+FINAL STATUS:
+  FIXED — SAFE FOR TESTNET ENGINE START
+========================================

@@ -1,0 +1,35 @@
+========================================
+ATS-SMC v48 SPOT PROTECTIVE ORDER FIX
+========================================
+
+ROOT CAUSE:
+  After BUY fills, bot creates stop-loss sell with quantity=actual_qty.
+  Binance takes fee from BUY → free BTC < actual_qty.
+  Stop-loss sell tries to sell more BTC than available → InsufficientFunds.
+  Emergency flatten also used actual_qty → same InsufficientFunds.
+
+  For Spot, free base balance after BUY = actual_qty - fee.
+  Protective orders must use free_base, not actual_qty.
+
+FILES CHANGED:
+  backend/core/order_manager.py
+
+FIX:
+  1. Added _is_spot flag and _get_free_base_balance() method
+  2. In open_position(): cap SL/TP quantity to free_base for spot BUY
+  3. In emergency flatten: cap quantity to free_base for spot
+  4. In _resize_stop_loss(): cap to free_base for spot
+  5. In _resize_take_profits(): cap to free_base for spot
+
+  For Futures/Paper: unchanged (no free_base check needed).
+
+REGRESSION:
+  148 passed, 0 failed
+  compileall PASS
+
+LIVE:
+  DO NOT ENABLE
+
+FINAL STATUS:
+  FIXED
+========================================

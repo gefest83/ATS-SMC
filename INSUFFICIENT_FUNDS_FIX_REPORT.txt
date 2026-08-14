@@ -1,0 +1,35 @@
+========================================
+ATS-SMC v48 INSUFFICIENT FUNDS FIX
+========================================
+
+ROOT CAUSE:
+  After equity fix, calculate_position_size() used total portfolio equity
+  (USDT + BTC×price ≈ 10000) to calculate BUY size. But for Spot BUY,
+  only free USDT (~0.45) is available. Bot tried to BUY ~10000 USDT
+  worth of BTC with only 0.45 USDT free → InsufficientFunds error.
+
+FILES CHANGED:
+  backend/core/engine/smc_bot.py
+
+FIX:
+  1. Added _free_quote_balance attribute to track free USDT/USD
+  2. During equity reconciliation, fetch raw CCXT response to get free balance
+  3. After calculate_position_size():
+     - Futures: no cap (USDT IS the margin)
+     - Paper: no cap (simulated)
+     - Spot BUY: cap to free_quote_balance / entry_price
+     - Spot SELL: cap to free base asset balance
+
+  If cap reduces size below exchange minimum, size becomes 0 and trade is
+  skipped (no order sent, no InsufficientFunds error).
+
+REGRESSION:
+  148 passed, 0 failed
+  compileall PASS
+
+LIVE:
+  DO NOT ENABLE
+
+FINAL STATUS:
+  FIXED
+========================================
