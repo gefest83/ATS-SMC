@@ -435,3 +435,37 @@ order_manager = OrderManager()
 def get_order_manager() -> OrderManager:
     """Get global order manager instance."""
     return order_manager
+
+    async def force_cancel_stale_orders(
+        self,
+        timeout_seconds: int = 60,
+        session: AsyncSession = None
+    ) -> Dict[str, Any]:
+        """Force Cancel зависших ордеров (timeout > 60 сек)."""
+        from datetime import timedelta
+        
+        cutoff_time = datetime.utcnow() - timedelta(seconds=timeout_seconds)
+        
+        stmt = select(Order).where(
+            and_(
+                Order.status.in_([OrderStatus.ORDER_PENDING, OrderStatus.ORDER_SUBMITTED]),
+                Order.created_at < cutoff_time
+            )
+        )
+        
+        result = await session.execute(stmt)
+        stale_orders = list(result.scalars().all())
+        
+        cancelled_count = 0
+        for order in stale_orders:
+            try:
+                order.status = OrderStatus.ORDER_CANCELLED
+                order.updated_at = datetime.utcnow()
+                cancelled_count += 1
+            except Exception as e:
+                logger.error(f"Error cancelling stale order {order.order_id}: {e}")
+        
+        if session:
+            await session.flush()
+        
+        return {"cancelled_count": cancelled_count, "stale_orders_found": len(stale_orders)}

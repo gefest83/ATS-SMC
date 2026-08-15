@@ -5,6 +5,7 @@ Centralized risk management that validates every order before execution.
 No order is sent to exchange without passing Risk Manager checks.
 """
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional, Dict, Any, List, Tuple
@@ -18,6 +19,47 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+
+class BalanceLock:
+    """Механизм блокировки баланса для предотвращения гонки при мульти-символьной торговле."""
+    
+    def __init__(self):
+        self._locks: Dict[str, asyncio.Lock] = {}
+        self._locked_amounts: Dict[str, Decimal] = {}  # symbol -> locked amount
+        self._global_lock = asyncio.Lock()
+
+    async def acquire(self, symbol: str, amount: Decimal) -> bool:
+        """Попытка заблокировать сумму для символа. Возвращает True если успешно."""
+        async with self._global_lock:
+            if symbol not in self._locks:
+                self._locks[symbol] = asyncio.Lock()
+            
+            if symbol not in self._locked_amounts:
+                self._locked_amounts[symbol] = Decimal('0')
+
+        async with self._locks[symbol]:
+            self._locked_amounts[symbol] += amount
+            return True
+
+    async def release(self, symbol: str, amount: Decimal):
+        """Освобождение заблокированной суммы."""
+        async with self._global_lock:
+            if symbol not in self._locks:
+                return
+            if symbol not in self._locked_amounts:
+                return
+
+        async with self._locks[symbol]:
+            self._locked_amounts[symbol] = max(Decimal('0'), self._locked_amounts[symbol] - amount)
+
+    def get_locked(self, symbol: str) -> Decimal:
+        """Получить заблокированную сумму для символа."""
+        return self._locked_amounts.get(symbol, Decimal('0'))
+
+    def clear(self):
+        """Очистка всех блокировок (при рестарте)."""
+        self._locked_amounts.clear()
 
 
 class RiskCheckResult(Enum):
@@ -72,6 +114,7 @@ class RiskManager:
         self.last_reset_date = datetime.now().date()
         self._open_positions_cache: Dict[str, Position] = {}
         self._pending_signals: set = set()
+        self.balance_lock = BalanceLock()  # Locking mechanism for multi-symbol trading
         
     def _reset_daily_if_needed(self):
         """Reset daily PnL tracking if new day."""
@@ -81,6 +124,80 @@ class RiskManager:
             self.daily_pnl = 0.0
             self.last_reset_date = today
     
+    async def _check_available_balance_with_fees(
+        self,
+        symbol: str,
+        exchange: str,
+        quantity: float,
+        price: float,
+        session: AsyncSession
+    ) -> RiskCheck:
+        """Проверка доступного баланса с учетом комиссий биржи."""
+        try:
+            # Получаем информацию о символе для min_notional
+            stmt = select(SymbolModel).where(
+                and_(SymbolModel.symbol == symbol, SymbolModel.exchange == exchange)
+            )
+            result = await session.execute(stmt)
+            symbol_info = result.scalar_one_or_none()
+            
+            if not symbol_info:
+                return RiskCheck(
+                    name="available_balance",
+                    result=RiskCheckResult.WARNING,
+                    message=f"Symbol info not found for {symbol}",
+                    details={"symbol": symbol, "exchange": exchange}
+                )
+            
+            required_notional = Decimal(str(quantity)) * Decimal(str(price))
+            fee_estimate = required_notional * Decimal('0.001')  # 0.1% комиссия
+            total_required = required_notional + fee_estimate
+            
+            # Проверяем min_notional для биржи
+            min_notional = getattr(symbol_info, 'min_notional', None)
+            if min_notional and total_required < Decimal(str(min_notional)):
+                return RiskCheck(
+                    name="available_balance",
+                    result=RiskCheckResult.FAIL,
+                    message=f"Order below min_notional. Required: {min_notional}, Got: {total_required}",
+                    details={
+                        "required": float(total_required),
+                        "min_notional": float(min_notional),
+                        "symbol": symbol
+                    }
+                )
+            
+            # Проверяем заблокированные суммы (locking mechanism)
+            locked = self.balance_lock.get_locked(symbol)
+            available = Decimal(str(symbol_info.free_balance or 0)) - locked
+            
+            if available < total_required:
+                return RiskCheck(
+                    name="available_balance",
+                    result=RiskCheckResult.FAIL,
+                    message=f"Insufficient balance. Required: {total_required}, Available: {available} (locked: {locked})",
+                    details={
+                        "required": float(total_required),
+                        "available": float(available),
+                        "locked": float(locked),
+                        "symbol": symbol
+                    }
+                )
+            
+            return RiskCheck(
+                name="available_balance",
+                result=RiskCheckResult.PASS,
+                message="Balance check passed",
+                details={"available": float(available), "required": float(total_required)}
+            )
+        except Exception as e:
+            return RiskCheck(
+                name="available_balance",
+                result=RiskCheckResult.WARNING,
+                message=f"Error checking balance: {e}",
+                details={"error": str(e)}
+            )
+
     async def validate_order(
         self,
         symbol: str,
@@ -101,7 +218,12 @@ class RiskManager:
         
         assessment = RiskAssessment(approved=True)
         
-        # Run all checks
+        # Run all checks including new balance check with fees and min_notional
+        if session:
+            await self._check_available_balance_with_fees(
+                assessment, symbol, exchange, quantity, price, session
+            )
+        
         await self._check_emergency_stop(assessment, exchange)
         await self._check_trading_mode(assessment, exchange)
         await self._check_exchange_connectivity(assessment, exchange)
@@ -114,6 +236,10 @@ class RiskManager:
         await self._check_exposure_limits(assessment, symbol, exchange, quantity, price)
         
         if assessment.approved:
+            # Lock balance for this symbol to prevent race conditions
+            if session:
+                required_notional = Decimal(str(quantity)) * Decimal(str(price))
+                await self.balance_lock.acquire(symbol, required_notional)
             logger.debug(
                 f"Risk check PASSED for {side} {quantity} {symbol} on {exchange}"
             )
@@ -124,6 +250,95 @@ class RiskManager:
             )
         
         return assessment
+    
+    async def _check_available_balance_with_fees(
+        self,
+        assessment: RiskAssessment,
+        symbol: str,
+        exchange: str,
+        quantity: float,
+        price: float,
+        session: AsyncSession
+    ):
+        """Wrapper for balance check."""
+        check = await self._check_available_balance_with_fees_impl(
+            symbol, exchange, quantity, price, session
+        )
+        assessment.add_check(check)
+
+    async def _check_available_balance_with_fees_impl(
+        self,
+        symbol: str,
+        exchange: str,
+        quantity: float,
+        price: float,
+        session: AsyncSession
+    ) -> RiskCheck:
+        """Проверка доступного баланса с учетом комиссий биржи."""
+        try:
+            # Получаем информацию о символе для min_notional
+            stmt = select(SymbolModel).where(
+                and_(SymbolModel.symbol == symbol, SymbolModel.exchange == exchange)
+            )
+            result = await session.execute(stmt)
+            symbol_info = result.scalar_one_or_none()
+            
+            if not symbol_info:
+                return RiskCheck(
+                    name="available_balance",
+                    result=RiskCheckResult.WARNING,
+                    message=f"Symbol info not found for {symbol}",
+                    details={"symbol": symbol, "exchange": exchange}
+                )
+            
+            required_notional = Decimal(str(quantity)) * Decimal(str(price))
+            fee_estimate = required_notional * Decimal('0.001')  # 0.1% комиссия
+            total_required = required_notional + fee_estimate
+            
+            # Проверяем min_notional для биржи
+            min_notional = getattr(symbol_info, 'min_notional', None)
+            if min_notional and total_required < Decimal(str(min_notional)):
+                return RiskCheck(
+                    name="available_balance",
+                    result=RiskCheckResult.FAIL,
+                    message=f"Order below min_notional. Required: {min_notional}, Got: {total_required}",
+                    details={
+                        "required": float(total_required),
+                        "min_notional": float(min_notional),
+                        "symbol": symbol
+                    }
+                )
+            
+            # Проверяем заблокированные суммы (locking mechanism)
+            locked = self.balance_lock.get_locked(symbol)
+            available = Decimal(str(symbol_info.free_balance or 0)) - locked
+            
+            if available < total_required:
+                return RiskCheck(
+                    name="available_balance",
+                    result=RiskCheckResult.FAIL,
+                    message=f"Insufficient balance. Required: {total_required}, Available: {available} (locked: {locked})",
+                    details={
+                        "required": float(total_required),
+                        "available": float(available),
+                        "locked": float(locked),
+                        "symbol": symbol
+                    }
+                )
+            
+            return RiskCheck(
+                name="available_balance",
+                result=RiskCheckResult.PASS,
+                message="Balance check passed",
+                details={"available": float(available), "required": float(total_required)}
+            )
+        except Exception as e:
+            return RiskCheck(
+                name="available_balance",
+                result=RiskCheckResult.WARNING,
+                message=f"Error checking balance: {e}",
+                details={"error": str(e)}
+            )
     
     async def _check_emergency_stop(self, assessment: RiskAssessment, exchange: str):
         """Check if emergency stop is active."""

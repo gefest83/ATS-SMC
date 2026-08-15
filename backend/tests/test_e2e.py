@@ -83,7 +83,7 @@ class TestE2EWorkflow:
         4. Проверяем целостность данных
         """
         # 1. Генерация сигнала
-        state = StrategyState(symbol='BTC/USDT', timeframe='30m')
+        state = StrategyState(symbol='BTC/USDT', exchange='binance')
         signal = strategy.calculate(state, sample_candles, [], [])
         
         if signal:
@@ -126,7 +126,7 @@ class TestE2EWorkflow:
         - Расчет stop_distance
         - Учет комиссий и precision
         """
-        state = StrategyState(symbol='BTC/USDT', timeframe='30m')
+        state = StrategyState(symbol='BTC/USDT', exchange='binance')
         signal = strategy.calculate(state, sample_candles, [], [])
         
         if signal:
@@ -168,7 +168,7 @@ class TestE2EWorkflow:
         - Один сигнал не создает два ордера
         - Idempotency key работает
         """
-        state = StrategyState(symbol='ETH/USDT', timeframe='30m')
+        state = StrategyState(symbol='ETH/USDT', exchange='binance')
         signal = strategy.calculate(state, sample_candles, [], [])
         
         if signal:
@@ -204,7 +204,7 @@ class TestE2EWorkflow:
         - Блокировка при превышении max_open_trades
         - Блокировка при emergency stop
         """
-        state = StrategyState(symbol='SOL/USDT', timeframe='30m')
+        state = StrategyState(symbol='SOL/USDT', exchange='binance')
         signal = strategy.calculate(state, sample_candles, [], [])
         
         if signal:
@@ -243,8 +243,8 @@ class TestE2EWorkflow:
         - Сигналы для BTC не влияют на ETH
         - Независимые StrategyState
         """
-        btc_state = StrategyState(symbol='BTC/USDT', timeframe='30m')
-        eth_state = StrategyState(symbol='ETH/USDT', timeframe='30m')
+        btc_state = StrategyState(symbol='BTC/USDT', exchange='binance')
+        eth_state = StrategyState(symbol='ETH/USDT', exchange='binance')
         
         btc_signal = strategy.calculate(btc_state, sample_candles, [], [])
         eth_signal = strategy.calculate(eth_state, sample_candles, [], [])

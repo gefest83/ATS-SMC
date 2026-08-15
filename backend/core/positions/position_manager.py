@@ -515,6 +515,140 @@ class PositionManager:
             "tp3_hit": sum(1 for p in positions if p.tp3_hit),
         }
 
+    async def check_trailing_stop(
+        self,
+        position: Position,
+        current_high: float,
+        current_low: float,
+        atr: float,
+        session: AsyncSession
+    ) -> PositionUpdate:
+        """
+        Проверка и обновление Trailing Stop.
+        
+        LONG: trailStop = lastSwingLow - ATR * 0.25
+        SHORT: trailStop = lastSwingHigh + ATR * 0.25
+        
+        Trailing stop никогда не движется назад.
+        """
+        if not position.trailing_active or not config.use_trail:
+            return PositionUpdate(
+                success=False,
+                message="Trailing stop not active",
+                position_id=position.position_id
+            )
+        
+        new_sl = None
+        
+        if position.side == PositionSide.LONG:
+            # Для LONG используем swing low - ATR * 0.25
+            potential_sl = current_low - (atr * 0.25)
+            
+            # Trailing stop только повышается (для LONG)
+            if potential_sl > position.sl_price:
+                new_sl = potential_sl
+                logger.info(
+                    f"Trailing stop update LONG: {position.position_id} | "
+                    f"Old SL: {position.sl_price} | New SL: {new_sl:.4f}"
+                )
+        else:
+            # Для SHORT используем swing high + ATR * 0.25
+            potential_sl = current_high + (atr * 0.25)
+            
+            # Trailing stop только понижается (для SHORT)
+            if potential_sl < position.sl_price:
+                new_sl = potential_sl
+                logger.info(
+                    f"Trailing stop update SHORT: {position.position_id} | "
+                    f"Old SL: {position.sl_price} | New SL: {new_sl:.4f}"
+                )
+        
+        if new_sl:
+            position.sl_price = new_sl
+            
+            # Сохраняем обновление в БД
+            stmt = update(Position).where(
+                Position.position_id == position.position_id
+            ).values(sl_price=new_sl)
+            
+            await session.execute(stmt)
+            await session.flush()
+            
+            return PositionUpdate(
+                success=True,
+                message=f"Trailing stop updated to {new_sl:.4f}",
+                position_id=position.position_id,
+                details={"new_sl": new_sl, "old_sl": position.sl_price}
+            )
+        
+        return PositionUpdate(
+            success=False,
+            message="No trailing stop update needed",
+            position_id=position.position_id
+        )
+
+    async def sync_position_with_exchange(
+        self,
+        position: Position,
+        exchange_position_data: Dict[str, Any],
+        session: AsyncSession
+    ) -> PositionUpdate:
+        """
+        Принудительная синхронизация состояния позиции с биржей.
+        
+        Exchange state имеет приоритет для фактического состояния позиции.
+        """
+        try:
+            exchange_qty = float(exchange_position_data.get('quantity', 0))
+            exchange_side = exchange_position_data.get('side', '')
+            exchange_entry = float(exchange_position_data.get('entry_price', 0))
+            
+            # Проверяем расхождения
+            qty_diff = abs(position.remaining_quantity - exchange_qty)
+            
+            if qty_diff > 0.0001:  # Допустимая погрешность
+                logger.warning(
+                    f"Position sync: {position.position_id} | "
+                    f"Local qty: {position.remaining_quantity} | "
+                    f"Exchange qty: {exchange_qty} | Diff: {qty_diff}"
+                )
+                
+                # Обновляем локальное состояние
+                position.remaining_quantity = exchange_qty
+                
+                if exchange_qty <= 0:
+                    # Позиция закрыта на бирже
+                    position.is_open = False
+                    position.closed_at = datetime.utcnow()
+                    position.exit_reason = "EXCHANGE_SYNC_CLOSE"
+                
+                await session.flush()
+                
+                return PositionUpdate(
+                    success=True,
+                    message=f"Position synced with exchange. New qty: {exchange_qty}",
+                    position_id=position.position_id,
+                    details={
+                        "old_qty": position.remaining_quantity,
+                        "new_qty": exchange_qty,
+                        "is_open": position.is_open
+                    }
+                )
+            
+            return PositionUpdate(
+                success=True,
+                message="Position already synced",
+                position_id=position.position_id
+            )
+            
+        except Exception as e:
+            return PositionUpdate(
+                success=False,
+                message=f"Sync error: {e}",
+                position_id=position.position_id,
+                details={"error": str(e)}
+            )
+
 
 # Global position manager instance
 position_manager = PositionManager()
