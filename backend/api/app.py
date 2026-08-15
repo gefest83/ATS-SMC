@@ -1,12 +1,13 @@
 """
 FastAPI REST API for ATS-SMT Pro Trading Bot.
 """
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Set
 from datetime import datetime
 import logging
+import json
 
 from backend.config.settings import config, TradingMode
 from backend.core.persistence.database import AsyncSessionLocal, get_db_session
@@ -16,6 +17,7 @@ from backend.core.persistence.models import (
 )
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from backend.services.websocket_service import websocket_service
 
 logger = logging.getLogger(__name__)
 
@@ -807,15 +809,54 @@ async def get_settings_history(
     }
 
 
-# ============== WebSocket Endpoint Placeholder ==============
 
-# WebSocket implementation would go here for real-time updates
-# Using fastapi-websockets or similar library
+# ============== WebSocket Endpoint ==============
+
+@app.websocket("/ws")
+async def websocket_endpoint_handler(websocket: WebSocket, channels: str = "*"):
+    """WebSocket endpoint for real-time dashboard updates."""
+    await websocket_service.manager.connect(websocket, [channels] if channels != "*" else ["*"])
+    
+    try:
+        while True:
+            data = await websocket.receive_text()
+            
+            try:
+                message = json.loads(data)
+                action = message.get("action")
+                
+                if action == "subscribe":
+                    channels_to_sub = message.get("channels", [])
+                    websocket_service.manager.subscribe(websocket, channels_to_sub)
+                    await websocket_service.manager.send_personal(
+                        websocket,
+                        {"type": "subscribed", "channels": channels_to_sub}
+                    )
+                    
+                elif action == "unsubscribe":
+                    channels_to_unsub = message.get("channels", [])
+                    websocket_service.manager.unsubscribe(websocket, channels_to_unsub)
+                    
+                elif action == "ping":
+                    await websocket_service.manager.send_personal(
+                        websocket,
+                        {"type": "pong", "timestamp": datetime.utcnow().isoformat()}
+                    )
+                    
+            except json.JSONDecodeError:
+                pass
+                
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        websocket_service.manager.disconnect(websocket)
 
 
 def setup_api():
     """Setup and configure the API."""
-    logger.info("API configured successfully")
+    logger.info("API configured successfully with WebSocket support")
     return app
 
 

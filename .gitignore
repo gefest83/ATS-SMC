@@ -1,4 +1,4 @@
-```
+```gitignore
 # Python
 __pycache__/
 *.pyc
@@ -8,28 +8,66 @@ __pycache__/
 env/
 venv/
 .venv/
-.ENV
-.ENV.local
+.venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+*.pot
+*.po
+*~
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
 
-# Alembic
-alembic/versions/*.py
-
-# Build and distribution
+# Distribution / packaging
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
 *.egg-info/
+.installed.cfg
+*.egg
 
 # Testing
-.coverage
-coverage/
-htmlcov/
 .pytest_cache/
 .hypothesis/
 
-# Logs
-*.log
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# OS generated files
+# Environment
+.env
+.env.local
+.env.*
+!.env.example
+
+# OS
 .DS_Store
 Thumbs.db
+```
+
+Wait, let me reconsider this. The file changes only include `.py` files and a markdown file, which are source files. There are no build artifacts, dependencies, or temporary files in the changes shown. According to rule #6, I should output an empty .gitignore.
+
+```gitignore
+
 ```
