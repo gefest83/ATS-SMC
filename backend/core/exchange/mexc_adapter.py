@@ -10,9 +10,10 @@ from urllib.parse import urlencode
 
 import aiohttp
 
-from backend.core.exchange.base_adapter import ExchangeAdapter
+from backend.core.exchange.base_adapter import ExchangeAdapter, register_adapter
 
 
+@register_adapter('mexc')
 class MEXCAdapter(ExchangeAdapter):
     """Adapter for MEXC Exchange."""
 

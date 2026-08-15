@@ -13,10 +13,11 @@ import hmac
 from typing import Optional, Dict, List, Any, Tuple
 from datetime import datetime, timezone
 
-from backend.core.exchange.base_adapter import ExchangeAdapter, OrderType, OrderSide, OrderStatus
+from backend.core.exchange.base_adapter import ExchangeAdapter, OrderType, OrderSide, OrderStatus, register_adapter
 from backend.config.settings import settings
 
 
+@register_adapter('htx')
 class HTXAdapter(ExchangeAdapter):
     """HTX Exchange Adapter."""
 
