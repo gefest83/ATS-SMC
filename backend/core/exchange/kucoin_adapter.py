@@ -9,6 +9,10 @@ import time
 from typing import Optional, List, Dict, Any
 from backend.core.exchange.base_adapter import ExchangeAdapter, register_adapter
 from backend.models.schemas import OrderType, OrderSide, OrderStatus, Balance
+
+# Alias для совместимости
+BalanceInfo = Balance
+MarketInfo = dict  # Упрощенный тип для MarketInfo
 from backend.config.settings import config as settings
 
 
