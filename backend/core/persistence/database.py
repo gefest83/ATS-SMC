@@ -50,6 +50,19 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """Alias for get_db - Dependency for getting async database session."""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
 async def init_db():
     """Initialize database tables."""
     async with engine.begin() as conn:

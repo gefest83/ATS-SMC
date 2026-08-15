@@ -54,6 +54,7 @@ class Exchange(Base):
     symbols = relationship("Symbol", back_populates="exchange")
     orders = relationship("Order", back_populates="exchange")
     positions = relationship("Position", back_populates="exchange")
+    signals = relationship("Signal", back_populates="exchange", foreign_keys="Signal.exchange_id")
 
 
 class Symbol(Base):

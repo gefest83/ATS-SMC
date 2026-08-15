@@ -72,8 +72,8 @@ class OrderManager:
         side: str,
         order_type: str,
         quantity: float,
+        session: AsyncSession,
         price: Optional[float] = None,
-        session: AsyncSession
     ) -> OrderResult:
         """Create an order from a validated signal."""
         
@@ -257,11 +257,11 @@ class OrderManager:
         self,
         order_id: str,
         new_status: OrderStatus,
+        session: AsyncSession,
         filled_qty: Optional[float] = None,
         avg_price: Optional[float] = None,
         fees: Optional[float] = None,
         exchange_order_id: Optional[str] = None,
-        session: AsyncSession
     ) -> OrderResult:
         """Update order status from exchange feedback."""
         
