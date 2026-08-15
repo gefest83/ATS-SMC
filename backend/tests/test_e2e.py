@@ -84,19 +84,43 @@ class TestE2EWorkflow:
         """
         # 1. Генерация сигнала
         state = StrategyState(symbol='BTC/USDT', exchange='binance')
-        signal = strategy.generate_signal(state, sample_candles, [], [])
+        
+        # Создаем DataFrame из свечей
+        import pandas as pd
+        candles_m30_df = pd.DataFrame(sample_candles)
+        candles_4h_df = pd.DataFrame(sample_candles)  # Используем те же для теста
+        candles_1d_df = pd.DataFrame(sample_candles)  # Используем те же для теста
+        
+        signal = strategy.generate_signal(
+            symbol='BTC/USDT',
+            exchange='binance',
+            candles_m30=candles_m30_df,
+            candles_4h=candles_4h_df,
+            candles_1d=candles_1d_df,
+            portfolio_value=10000.0
+        )
         
         if signal:
-            # 2. Проверка риска
-            risk_result = risk_manager.check_pre_trade_risk(
-                signal=signal,
-                current_balance=10000.0,
-                available_balance=10000.0,
-                open_positions_count=0,
-                daily_pnl=0.0,
-                emergency_stop=False
-            )
+            # 2. Проверка риска через validate_order
+            import asyncio
+            from sqlalchemy.ext.asyncio import AsyncSessionLocal
             
+            async def check_risk():
+                async with AsyncSessionLocal() as session:
+                    risk_result = await risk_manager.validate_order(
+                        symbol='BTC/USDT',
+                        exchange='binance',
+                        side=signal.action.value,
+                        quantity=float(signal.quantity),
+                        price=float(signal.entry),
+                        risk_pct=1.0,
+                        signal_id=signal.signal_id,
+                        session=session
+                    )
+                    return risk_result
+            
+            risk_result = asyncio.run(check_risk())
+
             assert risk_result.approved is True or risk_result.approved is False
             
             if risk_result.approved:
@@ -127,7 +151,18 @@ class TestE2EWorkflow:
         - Учет комиссий и precision
         """
         state = StrategyState(symbol='BTC/USDT', exchange='binance')
-        signal = strategy.calculate(state, sample_candles, [], [])
+        import pandas as pd
+        candles_m30_df = pd.DataFrame(sample_candles)
+        candles_4h_df = pd.DataFrame(sample_candles)
+        candles_1d_df = pd.DataFrame(sample_candles)
+        signal = strategy.generate_signal(
+            symbol="BTC/USDT",
+            exchange="binance",
+            candles_m30=candles_m30_df,
+            candles_4h=candles_4h_df,
+            candles_1d=candles_1d_df,
+            portfolio_value=10000.0
+        )
         
         if signal:
             # Ручной расчет ожидаемого размера
@@ -169,7 +204,18 @@ class TestE2EWorkflow:
         - Idempotency key работает
         """
         state = StrategyState(symbol='ETH/USDT', exchange='binance')
-        signal = strategy.calculate(state, sample_candles, [], [])
+        import pandas as pd
+        candles_m30_df = pd.DataFrame(sample_candles)
+        candles_4h_df = pd.DataFrame(sample_candles)
+        candles_1d_df = pd.DataFrame(sample_candles)
+        signal = strategy.generate_signal(
+            symbol="BTC/USDT",
+            exchange="binance",
+            candles_m30=candles_m30_df,
+            candles_4h=candles_4h_df,
+            candles_1d=candles_1d_df,
+            portfolio_value=10000.0
+        )
         
         if signal:
             # Создаем первый ордер
@@ -205,7 +251,18 @@ class TestE2EWorkflow:
         - Блокировка при emergency stop
         """
         state = StrategyState(symbol='SOL/USDT', exchange='binance')
-        signal = strategy.calculate(state, sample_candles, [], [])
+        import pandas as pd
+        candles_m30_df = pd.DataFrame(sample_candles)
+        candles_4h_df = pd.DataFrame(sample_candles)
+        candles_1d_df = pd.DataFrame(sample_candles)
+        signal = strategy.generate_signal(
+            symbol="BTC/USDT",
+            exchange="binance",
+            candles_m30=candles_m30_df,
+            candles_4h=candles_4h_df,
+            candles_1d=candles_1d_df,
+            portfolio_value=10000.0
+        )
         
         if signal:
             # Тест 1: Insufficient balance
@@ -246,8 +303,9 @@ class TestE2EWorkflow:
         btc_state = StrategyState(symbol='BTC/USDT', exchange='binance')
         eth_state = StrategyState(symbol='ETH/USDT', exchange='binance')
         
-        btc_signal = strategy.calculate(btc_state, sample_candles, [], [])
-        eth_signal = strategy.calculate(eth_state, sample_candles, [], [])
+        import pandas as pd
+        btc_signal = strategy.generate_signal(symbol="BTC/USDT", exchange="binance", candles_m30=pd.DataFrame(sample_candles), candles_4h=pd.DataFrame(sample_candles), candles_1d=pd.DataFrame(sample_candles), portfolio_value=10000.0)
+        eth_signal = strategy.generate_signal(symbol="ETH/USDT", exchange="binance", candles_m30=pd.DataFrame(sample_candles), candles_4h=pd.DataFrame(sample_candles), candles_1d=pd.DataFrame(sample_candles), portfolio_value=10000.0)
         
         # Сигналы должны быть независимы
         if btc_signal and eth_signal:
@@ -266,7 +324,7 @@ class TestE2EWorkflow:
         - Применение корректных значений
         - История изменений
         """
-        from backend.core.strategy.smt_pro import SMTProSettings
+        from backend.core.persistence.models import StrategySettings
         
         # Тест 1: Некорректный risk_pct (> MAX)
         with pytest.raises(ValueError):

@@ -1,4 +1,4 @@
-```gitignore
+```
 # Python
 __pycache__/
 *.pyc
@@ -9,35 +9,18 @@ __pycache__/
 .venv/
 venv/
 env/
-.env
-.env.local
-*.env.*
+requirements.txt.bak
 
 # Logs
 *.log
 
-# Tests
+# Testing
 .pytest_cache/
 .coverage
 coverage/
 
-# Editors
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Build artifacts
-dist/
-build/
-target/
-*.out
-*.exe
-*.dll
-*.so
-*.a
-
-# OS
-.DS_Store
-Thumbs.db
+# Environment
+.env
+.env.local
+.env.*
 ```
