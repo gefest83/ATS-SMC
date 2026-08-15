@@ -13,8 +13,8 @@ import hmac
 from typing import Optional, Dict, List, Any, Tuple
 from datetime import datetime, timezone
 
-from backend.core.exchange.base_adapter import ExchangeAdapter, OrderType, OrderSide, OrderStatus, register_adapter
-from backend.config.settings import settings
+from backend.core.exchange.base_adapter import ExchangeAdapter, register_adapter
+from backend.models.schemas import OrderType, OrderSide, OrderStatus
 
 
 @register_adapter('htx')

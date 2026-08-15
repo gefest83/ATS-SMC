@@ -9,9 +9,9 @@ from typing import Dict, List, Optional, Any
 from decimal import Decimal
 import aiohttp
 from backend.core.exchange.base_adapter import ExchangeAdapter
-from backend.models.market_data import Candle, Ticker, OrderBook
-from backend.models.order import Order, OrderType, OrderSide, OrderStatus
-from backend.models.balance import Balance
+# removed unused import
+# removed duplicate import
+# removed unused import
 
 
 class BitgetAdapter(ExchangeAdapter):
