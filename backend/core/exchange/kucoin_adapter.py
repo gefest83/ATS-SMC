@@ -7,12 +7,13 @@ import hashlib
 import hmac
 import time
 from typing import Optional, List, Dict, Any
-from backend.core.exchange.base_adapter import BaseExchangeAdapter, OrderResult, BalanceInfo, MarketInfo, register_adapter
-from backend.config.settings import settings
+from backend.core.exchange.base_adapter import ExchangeAdapter, register_adapter
+from backend.models.schemas import OrderType, OrderSide, OrderStatus, Balance
+from backend.config.settings import config as settings
 
 
 @register_adapter('kucoin')
-class KuCoinAdapter(BaseExchangeAdapter):
+class KuCoinAdapter(ExchangeAdapter):
     """KuCoin V2 API Adapter"""
 
     def __init__(self, api_key: str, api_secret: str, passphrase: str, testnet: bool = False):
@@ -125,7 +126,7 @@ class KuCoinAdapter(BaseExchangeAdapter):
     async def fetch_ticker(self, symbol: str) -> Dict[str, Any]:
         return {"symbol": symbol, "last": 60000.0, "bid": 59999.0, "ask": 60001.0, "volume": 1000.0}
 
-    async def create_order(self, symbol: str, side: str, type_: str, quantity: float, price: Optional[float] = None) -> Dict[str, Any]Result:
+    async def create_order(self, symbol: str, side: str, type_: str, quantity: float, price: Optional[float] = None) -> Dict[str, Any]:
         kucoin_symbol = symbol.replace("/", "-")
         endpoint = "/api/v1/orders"
         body = f'{{"clientOid":"{int(time.time()*1000)}","side":"{side.lower()}","symbol":"{kucoin_symbol}","type":"{type_}","size":"{quantity}"}}'
@@ -152,7 +153,7 @@ class KuCoinAdapter(BaseExchangeAdapter):
     async def fetch_positions(self) -> List[Dict]:
         return []
 
-    async def close_position(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]Result:
+    async def close_position(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]:
         return await self.create_order(symbol, "SELL" if side == "BUY" else "BUY", "market", quantity)
 
     async def get_server_time(self) -> int:

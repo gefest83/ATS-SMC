@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any
 from decimal import Decimal
 import aiohttp
 from backend.core.exchange.base_adapter import ExchangeAdapter, register_adapter
+from backend.models.schemas import OrderType, OrderSide, OrderStatus
 
 
 @register_adapter('bingx')
