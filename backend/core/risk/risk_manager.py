@@ -123,80 +123,6 @@ class RiskManager:
             logger.info(f"Resetting daily PnL tracker. Previous day: {self.daily_pnl}")
             self.daily_pnl = 0.0
             self.last_reset_date = today
-    
-    async def _check_available_balance_with_fees(
-        self,
-        symbol: str,
-        exchange: str,
-        quantity: float,
-        price: float,
-        session: AsyncSession
-    ) -> RiskCheck:
-        """Проверка доступного баланса с учетом комиссий биржи."""
-        try:
-            # Получаем информацию о символе для min_notional
-            stmt = select(SymbolModel).where(
-                and_(SymbolModel.symbol == symbol, SymbolModel.exchange == exchange)
-            )
-            result = await session.execute(stmt)
-            symbol_info = result.scalar_one_or_none()
-            
-            if not symbol_info:
-                return RiskCheck(
-                    name="available_balance",
-                    result=RiskCheckResult.WARNING,
-                    message=f"Symbol info not found for {symbol}",
-                    details={"symbol": symbol, "exchange": exchange}
-                )
-            
-            required_notional = Decimal(str(quantity)) * Decimal(str(price))
-            fee_estimate = required_notional * Decimal('0.001')  # 0.1% комиссия
-            total_required = required_notional + fee_estimate
-            
-            # Проверяем min_notional для биржи
-            min_notional = getattr(symbol_info, 'min_notional', None)
-            if min_notional and total_required < Decimal(str(min_notional)):
-                return RiskCheck(
-                    name="available_balance",
-                    result=RiskCheckResult.FAIL,
-                    message=f"Order below min_notional. Required: {min_notional}, Got: {total_required}",
-                    details={
-                        "required": float(total_required),
-                        "min_notional": float(min_notional),
-                        "symbol": symbol
-                    }
-                )
-            
-            # Проверяем заблокированные суммы (locking mechanism)
-            locked = self.balance_lock.get_locked(symbol)
-            available = Decimal(str(symbol_info.free_balance or 0)) - locked
-            
-            if available < total_required:
-                return RiskCheck(
-                    name="available_balance",
-                    result=RiskCheckResult.FAIL,
-                    message=f"Insufficient balance. Required: {total_required}, Available: {available} (locked: {locked})",
-                    details={
-                        "required": float(total_required),
-                        "available": float(available),
-                        "locked": float(locked),
-                        "symbol": symbol
-                    }
-                )
-            
-            return RiskCheck(
-                name="available_balance",
-                result=RiskCheckResult.PASS,
-                message="Balance check passed",
-                details={"available": float(available), "required": float(total_required)}
-            )
-        except Exception as e:
-            return RiskCheck(
-                name="available_balance",
-                result=RiskCheckResult.WARNING,
-                message=f"Error checking balance: {e}",
-                details={"error": str(e)}
-            )
 
     async def validate_order(
         self,
@@ -218,11 +144,12 @@ class RiskManager:
         
         assessment = RiskAssessment(approved=True)
         
-        # Run all checks including new balance check with fees and min_notional
+        # Run all checks including balance check with fees and min_notional
         if session:
-            await self._check_available_balance_with_fees(
-                assessment, symbol, exchange, quantity, price, session
+            balance_check = await self._check_available_balance_with_fees_impl(
+                symbol, exchange, quantity, price, session
             )
+            assessment.add_check(balance_check)
         
         await self._check_emergency_stop(assessment, exchange)
         await self._check_trading_mode(assessment, exchange)
@@ -260,7 +187,7 @@ class RiskManager:
         price: float,
         session: AsyncSession
     ):
-        """Wrapper for balance check."""
+        """Wrapper for balance check - deprecated, use impl directly."""
         check = await self._check_available_balance_with_fees_impl(
             symbol, exchange, quantity, price, session
         )
@@ -342,8 +269,19 @@ class RiskManager:
     
     async def _check_emergency_stop(self, assessment: RiskAssessment, exchange: str):
         """Check if emergency stop is active."""
-        # TODO: Load from settings/database
-        emergency_active = False
+        # Load from database settings
+        async with AsyncSessionLocal() as session:
+            from backend.core.persistence.models import StrategySettings
+            stmt = select(StrategySettings).where(
+                StrategySettings.exchange == exchange,
+                StrategySettings.is_active == True
+            ).limit(1)
+            result = await session.execute(stmt)
+            settings = result.scalar_one_or_none()
+            
+            emergency_active = False
+            if settings and hasattr(settings, 'emergency_stop'):
+                emergency_active = settings.emergency_stop
         
         if emergency_active:
             assessment.add_check(RiskCheck(
@@ -376,13 +314,30 @@ class RiskManager:
             ))
     
     async def _check_exchange_connectivity(self, assessment: RiskAssessment, exchange: str):
-        """Check if exchange is connected."""
-        # TODO: Check actual connectivity status
-        assessment.add_check(RiskCheck(
-            name="exchange_connectivity",
-            result=RiskCheckResult.PASS,
-            message=f"Exchange {exchange} is connected"
-        ))
+        """Check if exchange is connected by pinging the adapter."""
+        try:
+            from backend.core.exchange.registry import ExchangeRegistry
+            adapter = ExchangeRegistry.get_adapter(exchange)
+            if adapter:
+                # Try to get server time as connectivity check
+                await adapter.get_server_time()
+                assessment.add_check(RiskCheck(
+                    name="exchange_connectivity",
+                    result=RiskCheckResult.PASS,
+                    message=f"Exchange {exchange} is connected"
+                ))
+            else:
+                assessment.add_check(RiskCheck(
+                    name="exchange_connectivity",
+                    result=RiskCheckResult.FAIL,
+                    message=f"Exchange {exchange} adapter not found"
+                ))
+        except Exception as e:
+            assessment.add_check(RiskCheck(
+                name="exchange_connectivity",
+                result=RiskCheckResult.FAIL,
+                message=f"Exchange {exchange} connection failed: {str(e)}"
+            ))
     
     async def _check_max_open_trades(self, assessment: RiskAssessment, exchange: str):
         """Check maximum open trades limit."""
@@ -486,13 +441,62 @@ class RiskManager:
         side: str
     ):
         """Check for conflicting existing positions."""
-        # TODO: Query database for existing positions
-        # For now, simplified check
-        assessment.add_check(RiskCheck(
-            name="position_conflict",
-            result=RiskCheckResult.PASS,
-            message=f"No conflicting position for {symbol} {side}"
-        ))
+        try:
+            async with AsyncSessionLocal() as session:
+                stmt = select(Position).where(
+                    and_(
+                        Position.is_open == True,
+                        Position.symbol == symbol,
+                        Position.exchange_id.in_(
+                            select(SymbolModel.exchange_id).where(
+                                SymbolModel.canonical_symbol == symbol
+                            )
+                        )
+                    )
+                ).limit(1)
+                result = await session.execute(stmt)
+                existing_position = result.scalar_one_or_none()
+                
+                if existing_position:
+                    # Check if trying to open opposite position (flip scenario)
+                    if existing_position.side != side:
+                        # Allow flip only if position is being closed first
+                        # This is handled by strategy/position manager coordination
+                        assessment.add_check(RiskCheck(
+                            name="position_conflict",
+                            result=RiskCheckResult.WARNING,
+                            message=f"Existing {existing_position.side} position found. Flip scenario.",
+                            details={
+                                "existing_side": existing_position.side,
+                                "new_side": side,
+                                "quantity": float(existing_position.quantity or 0)
+                            }
+                        ))
+                    else:
+                        # Same side - block duplicate entry
+                        assessment.add_check(RiskCheck(
+                            name="position_conflict",
+                            result=RiskCheckResult.FAIL,
+                            message=f"Already have open {side} position for {symbol}",
+                            details={
+                                "existing_quantity": float(existing_position.quantity or 0),
+                                "new_quantity": 0
+                            }
+                        ))
+                        return
+                else:
+                    assessment.add_check(RiskCheck(
+                        name="position_conflict",
+                        result=RiskCheckResult.PASS,
+                        message=f"No conflicting position for {symbol} {side}"
+                    ))
+        except Exception as e:
+            assessment.add_check(RiskCheck(
+                name="position_conflict",
+                result=RiskCheckResult.WARNING,
+                message=f"Error checking position conflict: {str(e)}",
+                details={"error": str(e)}
+            ))
     
     async def _check_quantity_limits(
         self,

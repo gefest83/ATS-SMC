@@ -487,12 +487,56 @@ async def emergency_stop(background_tasks: BackgroundTasks):
     
     logger.critical("EMERGENCY STOP ACTIVATED via API")
     
-    # TODO: Close all positions, cancel all orders
-    # This would be handled by the main engine loop
+    # Execute emergency shutdown in background
+    async def execute_emergency_shutdown():
+        try:
+            from backend.core.persistence.database import AsyncSessionLocal
+            from backend.core.persistence.models import Position, Order
+            from sqlalchemy import select, update, and_
+            from sqlalchemy.ext.asyncio import AsyncSession
+            
+            async with AsyncSessionLocal() as session:
+                # 1. Cancel all open orders
+                stmt = select(Order).where(Order.status == "OPEN")
+                result = await session.execute(stmt)
+                open_orders = result.scalars().all()
+                
+                for order in open_orders:
+                    # Mark for cancellation (actual cancel via exchange adapter happens in engine loop)
+                    order.status = "CANCELLED"
+                    order.updated_at = datetime.now(timezone.utc)
+                    logger.warning(f"Emergency cancel order: {order.id} {order.symbol}")
+                
+                # 2. Mark all open positions for emergency closure
+                stmt = select(Position).where(Position.is_open == True)
+                result = await session.execute(stmt)
+                open_positions = result.scalars().all()
+                
+                for position in open_positions:
+                    position.emergency_close_requested = True
+                    position.updated_at = datetime.now(timezone.utc)
+                    logger.warning(f"Emergency close position: {position.id} {position.symbol}")
+                
+                await session.commit()
+                
+            # Notify via Telegram if configured
+            try:
+                from backend.services.telegram_service import telegram_service
+                await telegram_service.send_message(
+                    "🚨 EMERGENCY STOP\n\nВсе позиции помечены для закрытия.\nОрдера отменены.\nТорговля остановлена.",
+                    parse_mode=None
+                )
+            except Exception as e:
+                logger.error(f"Failed to send emergency Telegram notification: {e}")
+                
+        except Exception as e:
+            logger.error(f"Emergency shutdown failed: {e}", exc_info=True)
+    
+    background_tasks.add_task(execute_emergency_shutdown)
     
     return EngineControlResponse(
         success=True,
-        message="EMERGENCY STOP activated - all trading halted",
+        message="EMERGENCY STOP activated - closing positions and cancelling orders",
         state=engine_state
     )
 
