@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ats-smt-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-atsuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-atspassword}
+      POSTGRES_DB: ${DB_NAME:-ats_smt_pro}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-atsuser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ats-network
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ats-smt-backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-atsuser}:${DB_PASSWORD:-atspassword}@postgres:5432/${DB_NAME:-ats_smt_pro}
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      EXCHANGES: ${EXCHANGES:-binance}
+      SYMBOLS: ${SYMBOLS:-BTC/USDT,ETH/USDT,SOL/USDT}
+      TIMEFRAME: ${TIMEFRAME:-30m}
+      HTF1: ${HTF1:-4h}
+      HTF2: ${HTF2:-1d}
+      RISK_PCT: ${RISK_PCT:-1.0}
+      MAX_OPEN_TRADES: ${MAX_OPEN_TRADES:-3}
+      LIVE_TRADING_ENABLED: ${LIVE_TRADING_ENABLED:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - ats-network
+
+  # Frontend Dashboard (optional - to be implemented)
+  frontend:
+    image: nginx:alpine
+    container_name: ats-smt-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    volumes:
+      - ./frontend/dashboard:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - ats-network
+
+volumes:
+  postgres_data:
+
+networks:
+  ats-network:
+    driver: bridge
