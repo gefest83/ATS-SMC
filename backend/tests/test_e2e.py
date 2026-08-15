@@ -324,18 +324,18 @@ class TestE2EWorkflow:
         - Применение корректных значений
         - История изменений
         """
-        from backend.core.persistence.models import StrategySettings
+        from backend.api.app import StrategySettingsSchema
         
         # Тест 1: Некорректный risk_pct (> MAX)
         with pytest.raises(ValueError):
-            SMTProSettings(risk_pct=25.0)  # Превышает MAX_ALLOWED_RISK_PCT=5.0
+            StrategySettingsSchema(risk_pct=25.0)  # Превышает MAX_ALLOWED_RISK_PCT=5.0
         
         # Тест 2: Некорректные TP percentages
         with pytest.raises(ValueError):
-            SMTProSettings(tp1_pct=50, tp2_pct=50, tp3_pct=50)  # Сумма != 100
+            StrategySettingsSchema(tp1_pct=50, tp2_pct=50, tp3_pct=50)  # Сумма != 100
         
         # Тест 3: Корректные настройки
-        valid_settings = SMTProSettings(
+        valid_settings = StrategySettingsSchema(
             risk_pct=1.5,
             tp1_pct=40,
             tp2_pct=30,
@@ -362,9 +362,9 @@ class TestE2EWorkflow:
         from backend.core.exchange.okx_adapter import OKXAdapter
         from backend.core.exchange.bybit_adapter import BybitAdapter
         
-        binance = BinanceAdapter(api_key="", secret_key="")
-        okx = OKXAdapter(api_key="", secret_key="", passphrase="")
-        bybit = BybitAdapter(api_key="", secret_key="")
+        binance = BinanceAdapter(api_key="", api_secret="")
+        okx = OKXAdapter(api_key="", api_secret="", passphrase="")
+        bybit = BybitAdapter(api_key="", api_secret="")
         
         symbol = 'BTC/USDT'
         

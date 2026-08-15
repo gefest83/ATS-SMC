@@ -7,10 +7,11 @@ import hashlib
 import hmac
 import time
 from typing import Optional, List, Dict, Any
-from backend.core.exchange.base_adapter import BaseExchangeAdapter, OrderResult, BalanceInfo, MarketInfo
+from backend.core.exchange.base_adapter import BaseExchangeAdapter, OrderResult, BalanceInfo, MarketInfo, register_adapter
 from backend.config.settings import settings
 
 
+@register_adapter('gateio')
 class GateIOAdapter(BaseExchangeAdapter):
     """Gate.io V4 API Adapter"""
 
