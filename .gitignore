@@ -1,20 +1,15 @@
 ```
-# Database files
-*.db
+# Docker related
+.dockerenv
+Dockerfile
+docker-compose.yml
 
-# Dependencies
-.venv/
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Logs and temp files
+# Logs and temporary files
 *.log
 *.tmp
+*.swp
 
-# Environment
+# Environment files
 .env
 .env.local
 *.env.*
@@ -23,12 +18,29 @@ __pycache__/
 .vscode/
 .idea/
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Build artifacts
+# Dependencies and build artifacts
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 dist/
 build/
 target/
+.venv/
+venv/
+.env
+.env.local
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# MyPy cache
+.mypy_cache/
 ```
