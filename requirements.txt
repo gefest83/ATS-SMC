@@ -21,7 +21,7 @@ websockets==12.0
 # Technical Analysis
 pandas==2.1.4
 numpy==1.26.3
-pandas-ta==0.3.14b
+pandas-ta==0.4.71b0
 
 # Exchange SDKs (ccxt for unified API)
 ccxt==4.2.35

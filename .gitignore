@@ -1,5 +1,46 @@
 ```
-# Python
+# Dependencies
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+ENV/
+.venv/
+.env
+.env.local
+.env.*
+*.env.*
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Testing
+.coverage
+htmlcov/
+.coverage.*
+.nyc_output/
+coverage-final.json
+
+# Python specific
 __pycache__/
 *.py[cod]
 *$py.class
@@ -17,35 +58,7 @@ parts/
 sdist/
 var/
 wheels/
-*.egg-info/
-.installed.cfg
+pip-wheel-metadata/
+share/python-wheels/
 *.egg
-
-# Environment
-.env
-.env.local
-.env.*
-
-# Dependencies
-venv/
-.venv/
-
-# Logs
-*.log
-
-# Testing
-.coverage
-htmlcov/
-.tox/
-.nox/
-coverage.xml
-*.cover
-.hypothesis/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
 ```
