@@ -371,8 +371,8 @@ class HTXAdapter(ExchangeAdapter):
     async def create_order(
         self,
         symbol: str,
-        side: OrderSide,
-        order_type: OrderType,
+        side: str,
+        order_type: str,
         quantity: float,
         price: Optional[float] = None
     ) -> Optional[Dict]:
@@ -474,7 +474,7 @@ class HTXAdapter(ExchangeAdapter):
                     return str(acc.get("id"))
         return None
 
-    def _map_status(self, state: str) -> OrderStatus:
+    def _map_status(self, state: str) -> Dict[str, Any]:
         """Map HTX status to internal status."""
         status_map = {
             "submitted": OrderStatus.PENDING,

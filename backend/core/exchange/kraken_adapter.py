@@ -114,7 +114,7 @@ class KrakenAdapter(BaseExchangeAdapter):
     async def fetch_ticker(self, symbol: str) -> Dict[str, Any]:
         return {"symbol": symbol, "last": 60000.0, "bid": 59999.0, "ask": 60001.0, "volume": 1000.0}
 
-    async def create_order(self, symbol: str, side: str, type_: str, quantity: float, price: Optional[float] = None) -> OrderResult:
+    async def create_order(self, symbol: str, side: str, type_: str, quantity: float, price: Optional[float] = None) -> Dict[str, Any]Result:
         return OrderResult(
             order_id=f"kraken_{int(time.time() * 1000)}",
             client_order_id=f"ats_{int(time.time() * 1000)}",
@@ -136,7 +136,7 @@ class KrakenAdapter(BaseExchangeAdapter):
     async def fetch_positions(self) -> List[Dict]:
         return []
 
-    async def close_position(self, symbol: str, side: str, quantity: float) -> OrderResult:
+    async def close_position(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]Result:
         return await self.create_order(symbol, "SELL" if side == "BUY" else "BUY", "market", quantity)
 
     async def get_server_time(self) -> int:

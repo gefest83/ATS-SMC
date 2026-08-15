@@ -119,7 +119,7 @@ class BitgetAdapter(ExchangeAdapter):
         markets = await self.get_markets()
         return markets.get(symbol)
 
-    async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 100) -> List[Candle]:
+    async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Fetch OHLCV data"""
         path = "/api/v1/spot/market/candles"
         params = {
@@ -144,7 +144,7 @@ class BitgetAdapter(ExchangeAdapter):
                     return candles
                 raise Exception(f"Bitget API Error: {data.get('msg', 'Unknown error')}")
 
-    async def fetch_ticker(self, symbol: str) -> Ticker:
+    async def fetch_ticker(self, symbol: str) -> Dict[str, Any]:
         """Fetch ticker"""
         path = "/api/v1/spot/market/tickers"
         params = {"symbol": symbol.replace("/", "")}
@@ -164,7 +164,7 @@ class BitgetAdapter(ExchangeAdapter):
                     )
                 raise Exception(f"Bitget API Error: {data.get('msg', 'Unknown error')}")
 
-    async def fetch_open_orders(self, symbol: Optional[str] = None) -> List[Order]:
+    async def fetch_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fetch open orders"""
         path = "/api/v1/spot/trade/unfilledOrders"
         params = {}
@@ -210,12 +210,12 @@ class BitgetAdapter(ExchangeAdapter):
     async def create_order(
         self,
         symbol: str,
-        side: OrderSide,
+        side: str,
         type_: OrderType,
         quantity: Decimal,
         price: Optional[Decimal] = None,
         client_order_id: Optional[str] = None
-    ) -> Order:
+    ) -> Dict[str, Any]:
         """Create order"""
         path = "/api/v1/spot/trade/order"
         timestamp = str(int(time.time() * 1000))

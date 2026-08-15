@@ -84,7 +84,7 @@ class TestE2EWorkflow:
         """
         # 1. Генерация сигнала
         state = StrategyState(symbol='BTC/USDT', exchange='binance')
-        signal = strategy.calculate(state, sample_candles, [], [])
+        signal = strategy.generate_signal(state, sample_candles, [], [])
         
         if signal:
             # 2. Проверка риска

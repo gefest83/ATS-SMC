@@ -9,9 +9,6 @@ from typing import Dict, List, Optional, Any
 from decimal import Decimal
 import aiohttp
 from backend.core.exchange.base_adapter import ExchangeAdapter, register_adapter
-# removed unused import
-# removed duplicate import
-# removed unused import
 
 
 @register_adapter('bingx')
@@ -54,7 +51,7 @@ class BingXAdapter(ExchangeAdapter):
         self.connected = False
         self.logger.info("Disconnected from BingX")
 
-    async def get_balance(self) -> List[Balance]:
+    async def get_balance(self) -> Dict[str, Any]:
         """Get account balance"""
         if not self.connected:
             raise ConnectionError("Not connected to BingX")
@@ -121,7 +118,7 @@ class BingXAdapter(ExchangeAdapter):
         markets = await self.get_markets()
         return markets.get(symbol)
 
-    async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 100) -> List[Candle]:
+    async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Fetch OHLCV data"""
         path = "/openApi/spot/v1/market/kline"
         params = {
@@ -146,7 +143,7 @@ class BingXAdapter(ExchangeAdapter):
                     return candles
                 raise Exception(f"BingX API Error: {data.get('msg', 'Unknown error')}")
 
-    async def fetch_ticker(self, symbol: str) -> Ticker:
+    async def fetch_ticker(self, symbol: str) -> Dict[str, Any]:
         """Fetch ticker"""
         path = "/openApi/spot/v1/market/ticker"
         params = {"symbol": symbol.replace("/", "")}
@@ -166,7 +163,7 @@ class BingXAdapter(ExchangeAdapter):
                     )
                 raise Exception(f"BingX API Error: {data.get('msg', 'Unknown error')}")
 
-    async def fetch_open_orders(self, symbol: Optional[str] = None) -> List[Order]:
+    async def fetch_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fetch open orders"""
         path = "/openApi/spot/v1/trade/openOrders"
         timestamp = int(time.time() * 1000)
@@ -207,12 +204,12 @@ class BingXAdapter(ExchangeAdapter):
     async def create_order(
         self,
         symbol: str,
-        side: OrderSide,
+        side: str,
         type_: OrderType,
         quantity: Decimal,
         price: Optional[Decimal] = None,
         client_order_id: Optional[str] = None
-    ) -> Order:
+    ) -> Dict[str, Any]:
         """Create order"""
         path = "/openApi/spot/v1/trade/order"
         timestamp = int(time.time() * 1000)
