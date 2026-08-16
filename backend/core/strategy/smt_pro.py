@@ -105,26 +105,60 @@ class SymbolStrategyState:
 
 @dataclass
 class StrategyConfig:
-    """Strategy configuration parameters."""
+    """Strategy configuration parameters - ALL 23 Dashboard settings."""
     
+    # Structure & Confirmation
     structure_period: int = 20
+    confirmation_type: str = "body"  # "body" or "wick"
+    
+    # HTF Settings
+    htf1: str = "4H"
+    htf2: str = "1D"
+    
+    # ADX Settings
     adx_period: int = 14
-    adx_dead: float = 15.0
-    adx_range: float = 25.0
-    adx_vote: float = 20.0
-    atr_period: int = 14
-    min_atr_pct: float = 0.3
-    max_bos_dist_atr: float = 0.5
-    cooldown_bars: int = 6
-    impulse_mult: float = 1.0
-    bb_period: int = 20
-    bb_stddev: float = 2.0
-    bb_lookback: int = 10
-    max_bounces: int = 2
+    adx_th: float = 20.0  # Vote threshold
+    adx_trend: float = 25.0  # Trend threshold
+    adx_dead: float = 15.0  # Dead zone threshold
+    
+    # Filter Mode
+    filter_mode: str = "2of3"  # "2of3" or "ALL"
+    
+    # Volume Filter
     volume_sma: int = 20
     volume_mult: float = 1.5
-    filter_mode: str = "2of3"  # "2of3" or "ALL"
+    
+    # Impulse Filter
+    use_impulse: bool = True
+    impulse_mult: float = 1.0
+    
+    # Range Bounce Filter
+    use_range_bounce: bool = True
+    bb_lookback: int = 10
+    bb_period: int = 20
+    bb_stddev: float = 2.0
+    max_bounces: int = 2
+    
+    # ATR Filter
+    min_atr_pct: float = 0.3
+    atr_period: int = 14
+    
+    # BOS Chase Filter
+    max_bos_dist_atr: float = 0.5
+    
+    # Cooldown Filter
+    use_cooldown: bool = True
+    cooldown_bars: int = 6
+    
+    # Risk Management
     risk_pct: float = 1.0
+    tp1_pct: float = 40.0
+    tp2_pct: float = 30.0
+    tp3_pct: float = 30.0
+    
+    # Position Management
+    use_breakeven: bool = True
+    use_trail: bool = False
     
     @property
     def votes_required(self) -> int:
@@ -132,6 +166,65 @@ class StrategyConfig:
         if self.filter_mode == "ALL":
             return 3
         return 2  # 2of3
+    
+    def to_dict(self) -> dict:
+        """Convert config to dictionary for API/Dashboard."""
+        return {
+            "structurePeriod": self.structure_period,
+            "confirmationType": self.confirmation_type,
+            "htf1": self.htf1,
+            "htf2": self.htf2,
+            "adxTh": self.adx_th,
+            "adxTrend": self.adx_trend,
+            "adxDead": self.adx_dead,
+            "filterMode": self.filter_mode,
+            "volMult": self.volume_mult,
+            "useImpulse": self.use_impulse,
+            "impulseMult": self.impulse_mult,
+            "useRangeBounce": self.use_range_bounce,
+            "bbLookback": self.bb_lookback,
+            "maxBounces": self.max_bounces,
+            "minAtrPct": self.min_atr_pct,
+            "maxBosDistAtr": self.max_bos_dist_atr,
+            "useCooldown": self.use_cooldown,
+            "cooldownBars": self.cooldown_bars,
+            "riskPct": self.risk_pct,
+            "tp1Pct": self.tp1_pct,
+            "tp2Pct": self.tp2_pct,
+            "tp3Pct": self.tp3_pct,
+            "useBreakeven": self.use_breakeven,
+            "useTrail": self.use_trail
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'StrategyConfig':
+        """Create config from dictionary (Dashboard/API settings)."""
+        return cls(
+            structure_period=data.get("structurePeriod", 20),
+            confirmation_type=data.get("confirmationType", "body"),
+            htf1=data.get("htf1", "4H"),
+            htf2=data.get("htf2", "1D"),
+            adx_th=data.get("adxTh", 20.0),
+            adx_trend=data.get("adxTrend", 25.0),
+            adx_dead=data.get("adxDead", 15.0),
+            filter_mode=data.get("filterMode", "2of3"),
+            volume_mult=data.get("volMult", 1.5),
+            use_impulse=data.get("useImpulse", True),
+            impulse_mult=data.get("impulseMult", 1.0),
+            use_range_bounce=data.get("useRangeBounce", True),
+            bb_lookback=data.get("bbLookback", 10),
+            max_bounces=data.get("maxBounces", 2),
+            min_atr_pct=data.get("minAtrPct", 0.3),
+            max_bos_dist_atr=data.get("maxBosDistAtr", 0.5),
+            use_cooldown=data.get("useCooldown", True),
+            cooldown_bars=data.get("cooldownBars", 6),
+            risk_pct=data.get("riskPct", 1.0),
+            tp1_pct=data.get("tp1Pct", 40.0),
+            tp2_pct=data.get("tp2Pct", 30.0),
+            tp3_pct=data.get("tp3Pct", 30.0),
+            use_breakeven=data.get("useBreakeven", True),
+            use_trail=data.get("useTrail", False)
+        )
 
 
 class SMTProStrategy:
@@ -400,7 +493,49 @@ class SMTProStrategy:
         
         return votes, passes
     
-    def check_filters(
+    def _check_bos_confirmation(
+        self, 
+        candles: pd.DataFrame, 
+        bos_index: int, 
+        direction: str
+    ) -> bool:
+        """
+        Проверка подтверждения BOS с учетом типа подтверждения.
+        
+        confirmationType = "body": BOS подтверждается закрытием тела свечи за уровень
+        confirmationType = "wick": BOS подтверждается пробоем тенью (high/low)
+        
+        CRITICAL: Использует только закрытые свечи - нет lookahead bias.
+        """
+        if len(candles) <= bos_index + 1:
+            return False
+        
+        current_candle = candles.iloc[bos_index]
+        next_candle = candles.iloc[bos_index + 1]
+        
+        # Получаем тип подтверждения из настроек
+        confirmation_type = self.config.confirmation_type
+        
+        if confirmation_type == "wick":
+            # Подтверждение по тени (wick)
+            if direction == "long":
+                # Для лонга: следующая свеча должна иметь минимум ниже уровня BOS
+                # и закрыться выше минимума BOS свечи
+                return next_candle['close'] > current_candle['low']
+            else:  # short
+                # Для шорта: следующая свеча должна иметь максимум выше уровня BOS
+                # и закрыться ниже максимума BOS свечи
+                return next_candle['close'] < current_candle['high']
+        else:  # default 'body'
+            # Подтверждение по телу (body close)
+            if direction == "long":
+                # Для лонга: следующая свеча должна закрыться выше максимума BOS
+                return next_candle['close'] > current_candle['high']
+            else:  # short
+                # Для шорта: следующая свеча должна закрыться ниже минимума BOS
+                return next_candle['close'] < current_candle['low']
+    
+    def _apply_filters(
         self,
         candles: pd.DataFrame,
         indicators: IndicatorValues,
@@ -409,9 +544,10 @@ class SMTProStrategy:
         swing_level: float
     ) -> Dict[str, bool]:
         """
-        Check all strategy filters.
+        Применение фильтров с учетом настроек вкл/выкл.
         
-        Returns dict of filter results.
+        True = функция работает
+        False = функция действительно отключена
         """
         current_bar = state.current_bar_index
         close = candles['close'].iloc[-1]
@@ -419,40 +555,49 @@ class SMTProStrategy:
         
         results = {}
         
-        # 1. ATR Filter
+        # 1. ATR Filter - всегда активен (не имеет toggle)
         results['atr_ok'] = indicators.atr_pct >= self.config.min_atr_pct
         
-        # 2. Impulse Filter
-        impulse_threshold = indicators.atr * self.config.impulse_mult
-        current_impulse = abs(close - open_)
-        if current_bar > 0:
-            prev_close = candles['close'].iloc[-2]
-            prev_open = candles['open'].iloc[-2]
-            prev_impulse = abs(prev_close - prev_open)
-            total_impulse = current_impulse + prev_impulse
-            results['impulse_ok'] = total_impulse >= impulse_threshold
+        # 2. Impulse Filter - теперь учитывает настройку use_impulse
+        if self.config.use_impulse:
+            impulse_threshold = indicators.atr * self.config.impulse_mult
+            current_impulse = abs(close - open_)
+            if current_bar > 0:
+                prev_close = candles['close'].iloc[-2]
+                prev_open = candles['open'].iloc[-2]
+                prev_impulse = abs(prev_close - prev_open)
+                total_impulse = current_impulse + prev_impulse
+                results['impulse_ok'] = total_impulse >= impulse_threshold
+            else:
+                results['impulse_ok'] = True
         else:
+            # Impulse filter отключен - всегда passes
             results['impulse_ok'] = True
         
-        # 3. BOS Chase Filter
+        # 3. BOS Chase Filter - всегда активен (не имеет toggle)
         bos_dist = abs(close - swing_level)
         bos_dist_atr = bos_dist / indicators.atr if indicators.atr > 0 else 999
         results['bos_ok'] = bos_dist_atr <= self.config.max_bos_dist_atr
         
-        # 4. Cooldown Filter
-        if action == SignalAction.LONG:
-            results['cooldown_ok'] = (
-                state.long_cooldown_until is None or 
-                current_bar > state.long_cooldown_until
-            )
+        # 4. Cooldown Filter - теперь учитывает настройку use_cooldown
+        if self.config.use_cooldown:
+            if action == SignalAction.LONG:
+                results['cooldown_ok'] = (
+                    state.long_cooldown_until is None or 
+                    current_bar > state.long_cooldown_until
+                )
+            else:
+                results['cooldown_ok'] = (
+                    state.short_cooldown_until is None or 
+                    current_bar > state.short_cooldown_until
+                )
         else:
-            results['cooldown_ok'] = (
-                state.short_cooldown_until is None or 
-                current_bar > state.short_cooldown_until
-            )
+            # Cooldown filter отключен - всегда passes
+            results['cooldown_ok'] = True
         
-        # 5. Range Conditions (BB bounce for RANGE regime)
-        results['range_conditions_ok'] = True  # Default, refined in generate_signal
+        # 5. Range Conditions (BB bounce для RANGE режима)
+        # Проверяется отдельно в check_range_entry с учетом use_range_bounce
+        results['range_conditions_ok'] = True
         
         return results
     
@@ -464,35 +609,38 @@ class SMTProStrategy:
         action: SignalAction
     ) -> bool:
         """
-        Check range entry conditions (BB bounce + CHoCH).
+        Проверка условий входа в RANGE режиме (BB bounce + CHoCH).
         
-        Used when regime is RANGE.
+        Учитывает настройку use_range_bounce.
         """
+        # Если фильтр range bounce отключен - пропускаем
+        if not self.config.use_range_bounce:
+            return True
+        
         if action == SignalAction.LONG:
-            # Price touches lower BB
+            # Цена касается нижней полосы Боллинджера
             current_low = candles['low'].iloc[-1]
             if current_low <= indicators.bb_lower:
-                # Check if this is a new touch
+                # Проверяем, является ли это новым касанием
                 if state.last_bb_touch_long is None or \
                    current_low < state.last_bb_touch_long * 0.999:
                     state.long_bounce_count += 1
                     state.last_bb_touch_long = current_low
                 
-                # CHoCH required
+                # Требуется CHoCH
                 if state.choch_detected and state.long_bounce_count <= self.config.max_bounces:
                     return True
-        
         elif action == SignalAction.SHORT:
-            # Price touches upper BB
+            # Цена касается верхней полосы Боллинджера
             current_high = candles['high'].iloc[-1]
             if current_high >= indicators.bb_upper:
-                # Check if this is a new touch
+                # Проверяем, является ли это новым касанием
                 if state.last_bb_touch_short is None or \
                    current_high > state.last_bb_touch_short * 1.001:
                     state.short_bounce_count += 1
                     state.last_bb_touch_short = current_high
                 
-                # CHoCH required
+                # Требуется CHoCH
                 if state.choch_detected and state.short_bounce_count <= self.config.max_bounces:
                     return True
         
@@ -625,7 +773,7 @@ class SMTProStrategy:
         regime_str = get_market_regime(
             indicators.adx,
             self.config.adx_dead,
-            self.config.adx_range
+            self.config.adx_trend
         )
         regime = MarketRegime(regime_str)
         
@@ -676,9 +824,9 @@ class SMTProStrategy:
             return None
         
         # =========================================================================
-        # Check All Filters
+        # Check All Filters (using new _apply_filters with toggle support)
         # =========================================================================
-        filter_results = self.check_filters(
+        filter_results = self._apply_filters(
             closed_candles, indicators, state, action, swing_level
         )
         
@@ -693,10 +841,37 @@ class SMTProStrategy:
             return None
         
         # =========================================================================
+        # BOS Confirmation Check (confirmationType: body/wick)
+        # =========================================================================
+        # Находим индекс BOS свечи для проверки подтверждения
+        bos_index = len(closed_candles) - 2  # Предыдущая свеча - где произошел BOS
+        if bos_index >= 0 and bos_index < len(closed_candles) - 1:
+            direction = "long" if action == SignalAction.LONG else "short"
+            if not self._check_bos_confirmation(closed_candles, bos_index, direction):
+                return None
+        
+        # =========================================================================
         # Calculate Entry, Targets, Position Size
         # =========================================================================
         entry = swing_level
-        tp1, tp2, tp3, sl = self.calculate_targets(entry, indicators.atr, action)
+        
+        # Используем правильные проценты для TP из настроек
+        # Target Range = ATR * 2
+        target_range = indicators.atr * 2
+        
+        if action == SignalAction.LONG:
+            # TP1/TP2/TP3 = 40/30/30 от целевого диапазона
+            tp1 = entry + target_range * (self.config.tp1_pct / 100)
+            tp2 = entry + target_range * ((self.config.tp1_pct + self.config.tp2_pct) / 100)
+            tp3 = entry + target_range * ((self.config.tp1_pct + self.config.tp2_pct + self.config.tp3_pct) / 100)
+            sl = entry - target_range * 1.2
+        elif action == SignalAction.SHORT:
+            tp1 = entry - target_range * (self.config.tp1_pct / 100)
+            tp2 = entry - target_range * ((self.config.tp1_pct + self.config.tp2_pct) / 100)
+            tp3 = entry - target_range * ((self.config.tp1_pct + self.config.tp2_pct + self.config.tp3_pct) / 100)
+            sl = entry + target_range * 1.2
+        else:
+            tp1 = tp2 = tp3 = sl = entry
         
         position_size, risk_amount = self.calculate_position_size(
             portfolio_value, entry, sl, regime
@@ -752,6 +927,148 @@ class SMTProStrategy:
         state.bos_confirmed = False  # Reset after signal
         
         return signal
+    
+    def update_settings(self, settings: dict):
+        """
+        Обновление настроек стратегии в реальном времени.
+        
+        Вызывается из API при изменении настроек в Dashboard.
+        Все 23 параметра могут быть изменены без перезапуска.
+        """
+        # Создаем новый конфиг из переданных настроек
+        new_config = StrategyConfig.from_dict(settings)
+        self.config = new_config
+        
+        # Сброс состояний для применения новых настроек
+        self.symbol_states.clear()
+    
+    def check_breakeven_condition(
+        self, 
+        entry_price: float, 
+        current_price: float, 
+        stop_loss: float,
+        side: str
+    ) -> bool:
+        """
+        Проверка условия для активации Breakeven (+1R).
+        
+        Возвращает True, если профит >= 1R (расстояние до SL).
+        """
+        if entry_price == 0 or stop_loss == 0:
+            return False
+        
+        sl_distance = abs(entry_price - stop_loss)
+        
+        if side == "long":
+            profit = current_price - entry_price
+        else:  # short
+            profit = entry_price - current_price
+        
+        # Breakeven активируется при профите >= 1R
+        return profit >= sl_distance
+    
+    def calculate_trailing_stop(
+        self,
+        current_price: float,
+        atr: float,
+        side: str,
+        last_swing_low: Optional[float],
+        last_swing_high: Optional[float],
+        use_trail: bool = True
+    ) -> Optional[float]:
+        """
+        Расчет уровня Trailing Stop после достижения TP1.
+        
+        СПЕЦИФИКАЦИЯ SMT Pro v2:
+        
+        Для Long после TP1:
+            trailStop = lastSwingLow - ATR * 0.25
+            обновлять только если trailStop > currentStop
+        
+        Для Short после TP1:
+            trailStop = lastSwingHigh + ATR * 0.25
+            обновлять только если trailStop < currentStop
+        
+        НЕ использовать current_price ± ATR * 1.0
+        
+        Returns:
+            None если use_trail=False или нет данных
+            float с уровнем trailing stop
+        """
+        if not use_trail:
+            return None
+        
+        # Проверяем наличие необходимых swing уровней
+        if side == "long":
+            if last_swing_low is None:
+                return None
+            # Trail stop = последний swing low - ATR * 0.25
+            trailing_stop = last_swing_low - (atr * 0.25)
+        else:  # short
+            if last_swing_high is None:
+                return None
+            # Trail stop = последний swing high + ATR * 0.25
+            trailing_stop = last_swing_high + (atr * 0.25)
+        
+        return trailing_stop
+    
+    def check_opposite_exit(
+        self,
+        candles: pd.DataFrame,
+        current_position_side: str,
+        state: SymbolStrategyState
+    ) -> bool:
+        """
+        Проверка выхода по противоположному BOS/CHoCH.
+        
+        Возвращает True, если обнаружен сильный противоположный сигнал.
+        """
+        # Проверяем наличие противоположного тренда
+        if current_position_side == "long":
+            # Для лонга проверяем медвежий BOS/CHoCH
+            if state.current_trend == -1 and state.bear_break_pending:
+                return True
+        else:  # short
+            # Для шорта проверяем бычий BOS/CHoCH
+            if state.current_trend == 1 and state.bull_break_pending:
+                return True
+        
+        return False
+    
+    def apply_flip_logic(
+        self,
+        candles: pd.DataFrame,
+        state: SymbolStrategyState,
+        current_action: SignalAction
+    ) -> Optional[SignalAction]:
+        """
+        Реализация Flip Logic - разворот позиции при сильном противоположном сигнале.
+        
+        Если был LONG и появился сильный SHORT сигнал (или наоборот),
+        закрываем текущую позицию и открываем противоположную.
+        """
+        # Определяем противоположное действие
+        if current_action == SignalAction.LONG:
+            opposite = SignalAction.SHORT
+            opposite_trend = -1
+        else:
+            opposite = SignalAction.LONG
+            opposite_trend = 1
+        
+        # Проверяем условия для флипа:
+        # 1. Противоположный тренд подтвержден
+        # 2. Есть BOS в противоположном направлении
+        # 3. ADX достаточно высокий (сильный тренд)
+        
+        indicators = self.calculate_indicators(candles)
+        
+        if state.current_trend == opposite_trend and \
+           indicators.adx >= self.config.adx_trend and \
+           ((current_action == SignalAction.LONG and state.bear_break_pending) or \
+            (current_action == SignalAction.SHORT and state.bull_break_pending)):
+            return opposite
+        
+        return None
     
     def apply_cooldown(
         self,

@@ -6,16 +6,12 @@
 import React, { useMemo } from 'react';
 import {
   ComposedChart,
-  Candlestick,
-  Line,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  ReferenceLine,
-  ReferenceArea
+  ReferenceLine
 } from 'recharts';
-import { useWebSocket } from '../hooks/useWebSocket';
 
 interface PriceChartProps {
   symbol: string;
@@ -38,10 +34,10 @@ export const PriceChart: React.FC<PriceChartProps> = ({
   timeframe = '30m',
   height = 400
 }) => {
-  const { prices } = useWebSocket();
+  // In production, prices would come from WebSocket or API
+  // For now we generate mock data locally
   
   // Generate mock candle data for demonstration
-  // In production, this would come from API or WebSocket
   const candleData: CandleData[] = useMemo(() => {
     const data: CandleData[] = [];
     const basePrice = symbol.includes('BTC') ? 60000 : 
@@ -129,15 +125,6 @@ export const PriceChart: React.FC<PriceChartProps> = ({
             ]}
           />
           
-          {/* Candlestick */}
-          <Candlestick
-            dataKey="close"
-            open={candleData.map(d => d.open)}
-            high={candleData.map(d => d.high)}
-            low={candleData.map(d => d.low)}
-            low={candleData.map(d => d.low)}
-          />
-          
           {/* Entry Level */}
           <ReferenceLine
             y={mockPosition.entry}
@@ -202,24 +189,6 @@ export const PriceChart: React.FC<PriceChartProps> = ({
               fontSize: 10
             }}
           />
-          
-          {/* Bollinger Bands (mock) */}
-          <Line
-            type="monotone"
-            dataKey={() => candleData.map((d, i) => d.close * 1.02)}
-            stroke="#8B5CF6"
-            strokeWidth={1}
-            strokeDasharray="3 3"
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey={() => candleData.map((d, i) => d.close * 0.98)}
-            stroke="#8B5CF6"
-            strokeWidth={1}
-            strokeDasharray="3 3"
-            dot={false}
-          />
         </ComposedChart>
       </ResponsiveContainer>
       
@@ -236,10 +205,6 @@ export const PriceChart: React.FC<PriceChartProps> = ({
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 bg-green-500 rounded"></div>
           <span className="text-gray-400">Take Profit</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-purple-500 rounded"></div>
-          <span className="text-gray-400">Bollinger Bands</span>
         </div>
       </div>
     </div>
