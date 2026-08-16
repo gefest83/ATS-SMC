@@ -7,7 +7,7 @@ export const useWebSocket = (url: string) => {
 
   useEffect(() => {
     let ws: WebSocket | null = null;
-    let reconnectTimeout: NodeJS.Timeout;
+    let reconnectTimeout: ReturnType<typeof setTimeout>;
 
     const connect = () => {
       ws = new WebSocket(url);
